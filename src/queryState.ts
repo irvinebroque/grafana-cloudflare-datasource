@@ -50,6 +50,9 @@ export function queryForMode(stored: CloudflareQuery, type: QueryType): Cloudfla
       groupBy: ["dimensions.scriptName"],
     };
 
+  if (type === "rest")
+    return { ...base, operation: "tunnels", resourceId: "", scope: "account", format: "table" };
+
   if (type === "graphql")
     return {
       ...base,

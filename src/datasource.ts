@@ -21,6 +21,7 @@ import { DataSourceWithBackend, getTemplateSrv } from "@grafana/runtime";
 import {
   catalogSchema,
   graphCatalogSchema,
+  operationsSchema,
   defaultQuery,
   resourceSchema,
   type CloudflareOptions,
@@ -218,6 +219,20 @@ export class DataSource
 
   async accounts() {
     return resourceSchema.parse(await this.getResource("accounts")).result;
+  }
+
+  async operations() {
+    return operationsSchema.parse(await this.getResource("operations")).operations;
+  }
+
+  async resources(operation: string, query: CloudflareQuery) {
+    const response = await this.getResource("resources", {
+      operation,
+      accountId: getTemplateSrv().replace(query.accountId ?? ""),
+      zoneId: getTemplateSrv().replace(query.zoneId ?? ""),
+    });
+
+    return z.object({ result: resourceSchema.shape.result, limited: z.boolean() }).parse(response);
   }
 
   async zones(accountId?: string) {

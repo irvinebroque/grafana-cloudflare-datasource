@@ -2,6 +2,20 @@
 
 Version **0.1.1** validated on 10 November 2026 against a real Cloudflare account with existing traffic. No synthetic Worker or billable resource was deployed. See the [bug audit](AUDIT.md) for corrected defects and dependency findings.
 
+## Platform gap closure follow-up
+
+The next 10 November follow-up adds 33 schema-checked GraphQL product presets, optional resource browsing, 35 allowlisted read-only REST operations, and broader SQL log normalization. It adds no datasource settings or dashboards. The [product guide](PLATFORM.md) maps each area from the coverage audit to the shared query modes.
+
+The final build passes `vp check --deny-warnings`, **17 frontend tests**, **53 Go tests with the race detector**, `go vet`, and `vp run build`. All **16 real-account Chrome tests** and **16 core live checks** pass after rebuilding and restarting Grafana. Browser coverage includes operational inventory, resource browsing, and the audit-to-history split Explore link, alongside native traces, node graphs, SQL logs, variables, dashboards, and alert evaluation. Trace tests select arbitrary named spans rather than assuming HTTP operation names. A regression test rejects saved legacy Log Explorer queries before making any network request.
+
+All **33 GraphQL presets** were checked against the real account/zone schema and executed when enabled: **11 returned data**, **17 succeeded empty**, and **5 were disabled**. Enabled queries had no errors after fixing the WAF field limit. Cloudflare counts the scope and dataset fields in that limit; the builder reserves those fields, bounds default log selections, and reports omitted attributes. Fixture tests check explicit over-limit selections. Nonempty presets covered DNS, DDoS, Spectrum, AI Gateway cost/tokens/latency/errors/cache, AI Search storage, Durable Object runtime/storage, Pages Functions, and Workers Assets. Empty or disabled products are compatibility/availability evidence, not populated metric validation.
+
+Across **35 REST operations**, **21 returned real data**, **10 succeeded empty**, **3 could not run without a configured parent resource**, and **1 was rejected by the zone's plan**. Nonempty results include DNS records, certificates, tunnels, compute/storage/AI inventories, WAF rules, devices, historical DEX device metrics, DLP profiles, Gateway rules, Audit Logs v2, and resource-change history. Pool origins, pool health, and DEX HTTP history lacked parent resources. Custom certificates returned Cloudflare error 1011 because the plan does not support custom certificates. Fixtures verify those response shapes, certificate expiry, pool health, pagination, timestamp precision, projection, row/scan bounds, historical metric identity, and invalid-input rejection.
+
+The real DEX device endpoint requires an interval even though the published OpenAPI omitted it; `cf schema` and a real API response identified the requirement. Both DEX historical query operations now send the interval. Historical series retain observation times and device/test IDs, without a changing fetch-time label. Current-state certificate queries returned **15 labeled expiry series**, including the days unit, and passed Grafana's server-side reduce evaluator. No recurring alert or notification was created.
+
+All product logs use the SQL API. The plugin contains no legacy Log Explorer API integration or fallback. Dataset-aware timestamps and fields, alternate schemas, absent severity, original structured values, and canonical trace/severity/message mapping have fixture coverage. Modern SQL log paths and native traces continue to use existing real traffic. No resources, synthetic traffic, permissions, or ingestion settings were added.
+
 ## Platform analytics and native trace follow-up
 
 The 10 November follow-up passed `vp check --deny-warnings`, all 16 frontend tests, Go race tests, the plugin build, `go vet`, and all **14 real-account browser tests**. The browser suite now checks shared GraphQL discovery, a nonempty metric query, the two-panel native Traces dashboard and its trace-selection link, Explore’s node graph, and the span-to-log link. The live core validator passed **16/16** checks, including a retained **11-span trace** returned as the native trace, nodes, and edges frames. The validator now chooses a trace ID from retained trace search and requires nonempty trace frames; an empty trace no longer passes full-trace validation.
@@ -12,7 +26,7 @@ The broader native log path returned nonempty Email Routing and issue events usi
 
 Manual Grafana validation confirmed a native waterfall containing HTTP/cache/policy/framework and D1 operations, the native per-trace span graph, and a span link that returned matching Worker logs. These observed operation names are examples, not a parser allowlist. The trace dashboard contains only recent traces and the selected native waterfall. No resources were deployed or permissions expanded. Private account captures and credentials remain ignored in `.local/`.
 
-The integration does not retrieve external spans or reconstruct sampling gaps. Operational REST inventory, direct Audit Logs v2 events, organization APIs, Radar, and host-local Prometheus collection remain explicit boundaries in [coverage](COVERAGE.md).
+The integration does not retrieve external spans or reconstruct sampling gaps. Operational REST inventory and direct Audit Logs v2 were added in the platform gap follow-up above. Organization APIs, Radar, and host-local Prometheus collection remain explicit boundaries in [coverage](COVERAGE.md).
 
 ## Environment
 

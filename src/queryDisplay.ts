@@ -12,6 +12,10 @@ export function queryDisplayText(query: CloudflareQuery): string {
       return query.graphql ?? "";
     case "telemetry":
       return query.telemetry ?? "";
+    case "rest":
+      return [query.operation ?? "", query.resourceId ?? "", ...(query.columns ?? [])]
+        .filter(Boolean)
+        .join(" · ");
     case "builder": {
       const parts = [query.dataset ?? defaultQuery.dataset ?? ""];
 

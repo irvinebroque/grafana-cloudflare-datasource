@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { interpolateQuery } from "./interpolation";
 import { queryHasFilter, toggleQueryFilter } from "./queryFilters";
 import { queryDisplayText } from "./queryDisplay";
-import { defaultMetric, graphFormat, isNumericType } from "./queryState";
+import { defaultMetric, graphFormat, isNumericType, queryForMode } from "./queryState";
 import { sqlSuggestions } from "./sqlSuggestions";
 import type { CloudflareQuery, Dataset } from "./types";
 
@@ -200,4 +200,22 @@ describe("GraphQL result defaults", () => {
       }),
     ).toBe("timeseries");
   });
+});
+
+it("switches operational/log modes without carrying metric filters and interpolates resource IDs", () => {
+  const original: CloudflareQuery = {
+    refId: "A",
+    queryType: "builder",
+    filters: [{ field: "scriptName", operator: "=", value: "old" }],
+    columns: ["old"],
+    resourceId: "$worker",
+  };
+
+  const operational = queryForMode(original, "rest");
+  expect(operational.operation).toBe("tunnels");
+  expect(operational.format).toBe("table");
+  expect(operational.filters).toEqual([]);
+  expect(
+    interpolateQuery(original, (value) => value.replace("$worker", "worker-name")).resourceId,
+  ).toBe("worker-name");
 });

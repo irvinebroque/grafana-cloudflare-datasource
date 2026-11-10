@@ -60,6 +60,7 @@ type graphColumn struct {
 	Numeric     bool   `json:"numeric"`
 }
 type graphSettings struct {
+	MaxFields   int      `json:"maxNumberOfFields"`
 	Enabled     bool     `json:"enabled"`
 	Fields      []string `json:"availableFields"`
 	MaxDuration int64    `json:"maxDuration"`
@@ -199,7 +200,7 @@ func (d *Datasource) graphAvailability(ctx context.Context, scope, id, name stri
 	d.mu.Unlock()
 	body := entry.Body
 	if !exists || entry.Expires <= time.Now().Unix() {
-		query := "{viewer{" + scope + "s(filter:{" + scope + "Tag:" + fmt.Sprintf("%q", id) + "}){settings{" + name + "{enabled availableFields maxDuration maxPageSize notOlderThan}}}}}"
+		query := "{viewer{" + scope + "s(filter:{" + scope + "Tag:" + fmt.Sprintf("%q", id) + "}){settings{" + name + "{enabled availableFields maxDuration maxPageSize maxNumberOfFields notOlderThan}}}}}"
 		var err error
 		body, err = d.graphRequest(ctx, query, nil)
 		if err != nil {

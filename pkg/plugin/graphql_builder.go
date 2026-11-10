@@ -114,6 +114,14 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 	for _, field := range dataset.Fields {
 		columns[field.Name] = field
 	}
+	// The provider counts the scope and dataset fields in addition to the selected data fields.
+	fieldLimit := dataset.Settings.MaxFields
+	if fieldLimit > 0 {
+		fieldLimit -= 2
+		if fieldLimit < 1 {
+			return SQLResult{}, "", fmt.Errorf("Cloudflare field limit is too small for this query")
+		}
+	}
 	paths := []string{}
 	selected := map[string]bool{}
 	add := func(path string) error {
@@ -151,9 +159,14 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 		}
 	}
 	chosen := q.Columns
+	limitedFields := false
 	if len(chosen) == 0 && q.Format == "logs" {
 		for _, field := range dataset.Fields {
-			if !strings.Contains(field.Name, ".") {
+			if !strings.Contains(field.Name, ".") && !selected[field.Name] {
+				if fieldLimit > 0 && len(chosen)+len(paths) >= fieldLimit {
+					limitedFields = true
+					continue
+				}
 				chosen = append(chosen, field.Name)
 			}
 		}
@@ -181,6 +194,16 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 		if err := add(path); err != nil {
 			return SQLResult{}, "", err
 		}
+	}
+	selectionFields := map[string]bool{}
+	for _, path := range paths {
+		parts := strings.Split(path, ".")
+		for i := range parts {
+			selectionFields[strings.Join(parts[:i+1], ".")] = true
+		}
+	}
+	if fieldLimit > 0 && len(selectionFields) > fieldLimit {
+		return SQLResult{}, "", fmt.Errorf("%s allows at most %d selected fields; select fewer fields or dimensions", dataset.Name, fieldLimit)
 	}
 	filters := map[string]graphColumn{}
 	for _, field := range dataset.Filters {
@@ -267,5 +290,9 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 		return SQLResult{}, source, err
 	}
 	rows, err := selectRows(data, q.DataPath)
-	return SQLResult{Data: rows}, source, err
+	result := SQLResult{Data: rows}
+	if limitedFields {
+		result.Notices = []string{"Default log fields were limited by Cloudflare's field limit. Select fields explicitly to inspect other attributes."}
+	}
+	return result, source, err
 }

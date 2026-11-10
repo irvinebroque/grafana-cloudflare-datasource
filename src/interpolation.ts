@@ -9,6 +9,7 @@ export function interpolateQuery(
     accountId: replace(query.accountId ?? "", "raw"),
     zoneId: replace(query.zoneId ?? "", "raw"),
     dataset: replace(query.dataset ?? "", "raw"),
+    resourceId: replace(query.resourceId ?? "", "raw"),
     traceId: replace(query.traceId ?? "", "raw"),
     sql: replace(query.sql ?? "", "sqlstring"),
     analyticsSql:

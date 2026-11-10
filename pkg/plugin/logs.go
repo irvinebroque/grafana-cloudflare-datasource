@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Other Cloudflare and Log Explorer datasets use their own timestamp and event schema.
+// Other Cloudflare SQL datasets use their own timestamp and event schema.
 func (d *Datasource) prepareLogs(ctx context.Context, q *Query) error {
 	if q.QueryType != "builder" && q.QueryType != "" || q.Format != "logs" && !q.LogVolume || q.Dataset == "logs.workersLogs" || q.Dataset == "logs.containerLogs" {
 		return nil
@@ -76,17 +76,15 @@ func (d *Datasource) prepareLogs(ctx context.Context, q *Query) error {
 func logRows(rows []map[string]any) []map[string]any {
 	result := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
-		if _, exists := row["message"]; exists {
-			result = append(result, row)
-			continue
-		}
-		copy := make(map[string]any, len(row)+1)
+		copy := make(map[string]any, len(row)+3)
+		lower := make(map[string]any, len(row))
 		for key, value := range row {
 			copy[key] = value
+			lower[strings.ToLower(key)] = value
 		}
 		message := ""
-		for _, key := range []string{"line", "body", "errorMessage", "errorTitle", "eventType", "action", "url"} {
-			if value := textValue(row[key]); value != "" {
+		for _, key := range []string{"message", "line", "body", "errormessage", "errortitle", "eventtype", "action.description", "action", "url", "clientrequesturi", "clientrequestpath", "queryname"} {
+			if value := textValue(lower[key]); value != "" {
 				message = value
 				break
 			}
@@ -95,6 +93,19 @@ func logRows(rows []map[string]any) []map[string]any {
 			message = textValue(row)
 		}
 		copy["message"] = message
+		if _, exists := copy["traceId"]; !exists {
+			if value, ok := lower["traceid"].(string); ok && value != "" {
+				copy["traceId"] = value
+			}
+		}
+		if _, exists := copy["level"]; !exists {
+			for _, key := range []string{"level", "severity"} {
+				if value, ok := lower[key].(string); ok && value != "" {
+					copy["level"] = value
+					break
+				}
+			}
+		}
 		result = append(result, copy)
 	}
 	return result

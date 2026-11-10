@@ -200,7 +200,7 @@ func TestGraphRawEventsDefaultToNativeLogsInsteadOfNumericIDs(t *testing.T) {
 			t.Error(err)
 		}
 		if strings.Contains(body.Query, "settings{") {
-			fmt.Fprint(w, `{"data":{"viewer":{"accounts":[{"settings":{"rawEvents":{"enabled":true,"availableFields":["datetime","clientAsn","action"],"maxDuration":3600,"maxPageSize":10}}}]}}}`)
+			fmt.Fprint(w, `{"data":{"viewer":{"accounts":[{"settings":{"rawEvents":{"enabled":true,"availableFields":["datetime","clientAsn","action","extra"],"maxNumberOfFields":5,"maxDuration":3600,"maxPageSize":10}}}]}}}`)
 			return
 		}
 		if !strings.Contains(body.Query, "{datetime clientAsn action}") {
@@ -217,6 +217,7 @@ func TestGraphRawEventsDefaultToNativeLogsInsteadOfNumericIDs(t *testing.T) {
 		{Name: "datetime", Type: graphRef{Kind: "SCALAR", Name: "Time"}},
 		{Name: "clientAsn", Type: graphRef{Kind: "SCALAR", Name: "UInt64"}},
 		{Name: "action", Type: graphRef{Kind: "SCALAR", Name: "String"}},
+		{Name: "extra", Type: graphRef{Kind: "SCALAR", Name: "String"}},
 	}})
 	body, _ := json.Marshal(map[string]any{"__schema": map[string]any{"types": types}})
 	d.cacheBody("graphql-schema", body)
@@ -229,8 +230,33 @@ func TestGraphRawEventsDefaultToNativeLogsInsteadOfNumericIDs(t *testing.T) {
 	if frame.Meta.PreferredVisualization != data.VisTypeLogs || frame.Fields[0].Name != "datetime" || frame.Fields[1].Name != "message" || *frame.Fields[1].At(0).(*string) != "allow" {
 		t.Fatal("raw event did not use the native log contract")
 	}
+	if len(frame.Meta.Notices) == 0 {
+		t.Fatal("field-limit truncation was not disclosed")
+	}
+	q.Columns = []string{"clientAsn", "action", "extra"}
+	if result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q)); result.Error == nil {
+		t.Fatal("provider field limit ignored")
+	}
+	q.Columns = nil
 	q.Format = "timeseries"
 	if result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q)); result.Error == nil {
 		t.Fatal("raw event ASN was charted as a default metric")
+	}
+}
+
+func TestLogRowsPreserveProviderFieldsAndCanonicalCorrelation(t *testing.T) {
+	source := map[string]any{"Message": "", "ClientRequestURI": "/path", "TraceID": "trace", "Severity": "warn", "other": map[string]any{"key": "value"}}
+	rows := logRows([]map[string]any{source})
+	if rows[0]["message"] != "/path" || rows[0]["traceId"] != "trace" || rows[0]["level"] != "warn" || rows[0]["other"] == nil || source["message"] != nil {
+		t.Fatal("provider fields, log mapping, or immutability failed")
+	}
+}
+
+func TestLegacyLogExplorerQueriesAreRejectedWithoutNetwork(t *testing.T) {
+	d := testDatasource(t, func(http.ResponseWriter, *http.Request) { t.Error("legacy query reached network") })
+	q := Query{QueryType: "log-explorer", Dataset: "http_requests", Format: "logs"}
+	r := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
+	if r.Error == nil || r.Status != backend.StatusBadRequest {
+		t.Fatal("unsupported legacy query was accepted")
 	}
 }

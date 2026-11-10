@@ -35,6 +35,8 @@ You can enter account and zone IDs directly without these browsing permissions.
 
 Some datasets require additional product permissions. **Save & test** checks SQL catalog access; run an example query to verify access to your data. See the [permission reference](docs/PERMISSIONS.md) for details.
 
+For examples across Cloudflare products, resource discovery, retained logs, and operational queries, see the [product query guide](docs/PLATFORM.md).
+
 ## Getting started
 
 ### 1. Build the plugin
@@ -139,6 +141,7 @@ Cloudflare sampling and retention can leave missing spans. Spans produced outsid
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **GraphQL builder**      | Discover analytics datasets, fields, filters, availability, and time buckets for the selected account or zone.                                                 |
 | **GraphQL**              | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries.            |
+| **Resources and audit**  | Browse read-only inventory, health, certificate expiry, deployments, DEX metrics, CASB findings, and audit/history.                                            |
 | **Workers telemetry**    | Requires [Workers Observability Write](docs/PERMISSIONS.md#workers-telemetry). Paste a Query Builder request; use `events.events` as the result path for logs. |
 | **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.                                                                                    |
 

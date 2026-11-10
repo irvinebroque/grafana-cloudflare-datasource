@@ -4,6 +4,7 @@ import type { SelectableValue } from "@grafana/data";
 import { graphFormat } from "../queryState";
 import type { DataSource } from "../datasource";
 import type { CloudflareQuery, GraphDataset } from "../types";
+import { ResourcePicker } from "./ResourcePicker";
 
 interface Props {
   query: CloudflareQuery;
@@ -64,6 +65,20 @@ export function GraphQLBuilder({ query, datasource, onChange }: Props) {
     description: field.type + " · " + field.description,
   }));
 
+  const resource = [
+    { pattern: /^workersInvocations|^pagesFunctions/, operation: "workers", filter: "scriptName" },
+    { pattern: /^durableObjects/, operation: "durable-namespaces", filter: "namespaceId" },
+    { pattern: /^containers/, operation: "containers", filter: "applicationId" },
+    { pattern: /^aiGateway/, operation: "ai-gateways", filter: "gateway" },
+    { pattern: /^aiSearch/, operation: "ai-search", filter: "instanceId" },
+    { pattern: /^dnsFirewall/, operation: "dns-firewall", filter: "clusterTag" },
+    { pattern: /^loadBalancing/, operation: "pools", filter: "selectedPoolId" },
+  ].find(
+    (item) =>
+      item.pattern.test(query.dataset ?? "") &&
+      filters.some((filter) => filter.value === item.filter),
+  );
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
       {error && (
@@ -110,9 +125,26 @@ export function GraphQLBuilder({ query, datasource, onChange }: Props) {
             : ""}
         </div>
       )}
+      {resource && (
+        <ResourcePicker
+          key={`${resource.operation}:${query.accountId}:${query.zoneId}`}
+          datasource={datasource}
+          query={query}
+          operation={resource.operation}
+          value={query.filters?.find((filter) => filter.field === resource.filter)?.value ?? ""}
+          onChange={(value) =>
+            onChange({
+              filters: [
+                ...(query.filters ?? []).filter((filter) => filter.field !== resource.filter),
+                ...(value ? [{ field: resource.filter, operator: "=", value }] : []),
+              ],
+            })
+          }
+        />
+      )}
       <Field
         label="Metrics or fields"
-        description="Provider aggregates retain their own sampling and quantile semantics. Empty chooses a default metric."
+        description="Provider aggregates retain their sampling and quantile semantics. Empty chooses standard log fields or a default metric."
       >
         <Select
           aria-label="GraphQL fields"

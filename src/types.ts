@@ -6,6 +6,7 @@ export type QueryType =
   | "sql"
   | "graphql"
   | "graphql-builder"
+  | "rest"
   | "analytics"
   | "telemetry";
 
@@ -31,6 +32,8 @@ export interface CloudflareQuery extends DataQuery {
   zoneId?: string;
   scope?: "account" | "zone";
   dataset?: string;
+  operation?: string;
+  resourceId?: string;
   metrics?: Metric[];
   groupBy?: string[];
   filters?: QueryFilter[];
@@ -157,6 +160,7 @@ export const graphCatalogSchema = z.object({
           availableFields: z.array(z.string()),
           maxDuration: z.number(),
           maxPageSize: z.number(),
+          maxNumberOfFields: z.number().default(0),
           notOlderThan: z.number(),
         })
         .optional(),
@@ -165,3 +169,21 @@ export const graphCatalogSchema = z.object({
 });
 
 export type GraphDataset = z.infer<typeof graphCatalogSchema>["datasets"][number];
+
+export const operationsSchema = z.object({
+  operations: z.array(
+    z.object({
+      name: z.string(),
+      title: z.string(),
+      scope: z.enum(["account", "zone"]),
+      resource: z.string().optional(),
+      parameters: z.array(z.string()).optional(),
+      columns: z.array(z.string()),
+      format: z.enum(["table", "logs", "timeseries"]),
+      timeField: z.string().optional(),
+      permission: z.string(),
+    }),
+  ),
+});
+
+export type Operation = z.infer<typeof operationsSchema>["operations"][number];

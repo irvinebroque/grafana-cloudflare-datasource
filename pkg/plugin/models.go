@@ -19,6 +19,8 @@ type Query struct {
 	ZoneID        string          `json:"zoneId"`
 	Scope         string          `json:"scope"`
 	Dataset       string          `json:"dataset"`
+	Operation     string          `json:"operation"`
+	ResourceID    string          `json:"resourceId"`
 	SQL           string          `json:"sql"`
 	AnalyticsSQL  string          `json:"analyticsSql"`
 	Params        string          `json:"params"`
@@ -59,6 +61,8 @@ type Filter struct {
 }
 
 type SQLResult struct {
+	Incomplete bool             `json:"-"`
+	Notices    []string         `json:"-"`
 	Data       []map[string]any `json:"data"`
 	Meta       []resultColumn   `json:"meta"`
 	Statistics json.RawMessage  `json:"statistics"`

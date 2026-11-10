@@ -118,6 +118,13 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	if q.Format != "" && q.Format != "table" && q.Format != "logs" && q.Format != "traces" && q.Format != "timeseries" {
 		return backend.ErrDataResponse(backend.StatusBadRequest, "unsupported result format")
 	}
+	if q.QueryType == "rest" {
+		op, err := findRESTOperation(q.Operation)
+		if err != nil {
+			return queryError(err)
+		}
+		q.Scope = op.Scope
+	}
 	account, zone, err := d.scope(q)
 	if err != nil {
 		return queryError(err)
@@ -142,6 +149,8 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 		result, executed, err = d.analyticsQuery(ctx, q, dq)
 	case "telemetry":
 		result, executed, err = d.telemetryQuery(ctx, q, dq)
+	case "rest":
+		result, executed, err = d.restQuery(ctx, &q, dq)
 	default:
 		err = fmt.Errorf("unsupported query type %q", q.QueryType)
 	}
@@ -247,6 +256,40 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 	}
 	path := ""
 	route := strings.Trim(req.Path, "/")
+	if route == "operations" {
+		body, _ := json.Marshal(map[string]any{"operations": restCatalog()})
+		return sender.Send(&backend.CallResourceResponse{Status: 200, Headers: map[string][]string{"Content-Type": {"application/json"}}, Body: body})
+	}
+	if route == "resources" {
+		q := Query{QueryType: "rest", Operation: params.Get("operation"), AccountID: account, ZoneID: params.Get("zoneId"), Limit: 1000, Format: "table"}
+		op, cause := findRESTOperation(q.Operation)
+		if cause != nil || op.Resource != "" {
+			return sendResourceError(sender, 400, "select an inventory operation without a parent resource")
+		}
+		q.Scope = op.Scope
+		q.AccountID, q.ZoneID, cause = d.scope(q)
+		if cause != nil {
+			return sendResourceError(sender, 400, cause.Error())
+		}
+		result, _, cause := d.restQuery(ctx, &q, backend.DataQuery{})
+		if cause != nil {
+			return sendResourceError(sender, int(queryError(cause).Status), cause.Error())
+		}
+		resources := []map[string]string{}
+		for _, row := range result.Data {
+			id := textValue(row[op.IDField])
+			name := textValue(row[op.NameField])
+			if id == "" {
+				continue
+			}
+			if name == "" {
+				name = id
+			}
+			resources = append(resources, map[string]string{"id": id, "name": name})
+		}
+		body, _ := json.Marshal(map[string]any{"result": resources, "limited": result.Incomplete})
+		return sender.Send(&backend.CallResourceResponse{Status: 200, Headers: map[string][]string{"Content-Type": {"application/json"}}, Body: body})
+	}
 	if route == "graphql-datasets" {
 		q := Query{Scope: params.Get("scope"), AccountID: account, ZoneID: params.Get("zoneId"), Dataset: params.Get("dataset")}
 		q.AccountID, q.ZoneID, err = d.scope(q)

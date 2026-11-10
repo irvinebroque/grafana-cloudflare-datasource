@@ -44,7 +44,7 @@ func timestamp(value any) (*time.Time, bool) {
 		return nil, true
 	}
 	if s, ok := value.(string); ok {
-		for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999", "2006-01-02", "2006-01-02T15:04:05"} {
+		for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05Z07", "2006-01-02 15:04:05.999999999", "2006-01-02", "2006-01-02T15:04:05"} {
 			if t, err := time.Parse(layout, s); err == nil {
 				return &t, true
 			}
@@ -52,7 +52,11 @@ func timestamp(value any) (*time.Time, bool) {
 	}
 	if n, ok := number(value); ok && n != nil {
 		millis := *n
-		if millis < 1e11 {
+		if millis >= 1e17 {
+			millis /= 1e6
+		} else if millis >= 1e14 {
+			millis /= 1e3
+		} else if millis < 1e11 {
 			millis *= 1000
 		}
 		if millis < math.MinInt64 || millis >= math.MaxInt64 {
@@ -136,8 +140,8 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 			}
 		}
 	}
-	truncated := len(rows) > maxRows
-	if truncated {
+	truncated := result.Incomplete || len(rows) > maxRows
+	if len(rows) > maxRows {
 		rows = rows[:maxRows]
 	}
 	columns, err := resultColumns(rows, result)
@@ -181,11 +185,14 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 			frame.Fields[0].Config = &data.FieldConfig{Links: []data.DataLink{{Title: "Related Worker logs", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "builder", "dataset": "logs.workersLogs", "format": "logs", "accountId": q.AccountID, "scope": "account", "filters": []map[string]any{{"field": "traceId", "operator": "=", "value": "${__value.raw}", "literal": true}}, "limit": 1000}}}}}
 		}
 		limit := maxRows
-		if q.QueryType == "builder" || q.QueryType == "" || q.QueryType == "graphql-builder" {
+		if q.QueryType == "builder" || q.QueryType == "" || q.QueryType == "graphql-builder" || q.QueryType == "rest" {
 			limit = q.rowLimit(maxRows)
 		}
 		if truncated || len(rows) >= limit {
 			frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{Severity: data.NoticeSeverityWarning, Text: "Row limit reached. Narrow the query or raise the limit; results may be incomplete."})
+		}
+		for _, notice := range result.Notices {
+			frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{Severity: data.NoticeSeverityWarning, Text: notice})
 		}
 		if q.Format == "logs" || (q.Format == "traces" && q.TraceID == "") {
 			if q.Format == "logs" {
@@ -200,6 +207,9 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 				}
 				if field.Name == "traceId" && uid != "" {
 					field.Config.Links = []data.DataLink{{Title: "View trace", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "builder", "dataset": "logs.traces", "format": "traces", "traceId": "${__value.raw}", "accountId": q.AccountID, "scope": "account", "limit": 10000}}}}
+				}
+				if q.QueryType == "rest" && q.Operation == "audit" && field.Name == "id" && uid != "" {
+					field.Config.Links = []data.DataLink{{Title: "Resource history", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "rest", "operation": "audit-history", "resourceId": "${__value.raw}", "format": "logs", "accountId": q.AccountID, "scope": "account", "filters": []map[string]any{{"field": "action_time", "operator": "=", "value": "${__data.fields[\"action.time\"]}", "literal": true}}, "limit": 1000}}}}
 				}
 			}
 		}
@@ -429,6 +439,8 @@ func metricUnit(q Query, name string) string {
 		}
 	}
 	switch {
+	case name == "daysUntilExpiry":
+		return "d"
 	case strings.HasSuffix(name, "Us"):
 		return "µs"
 	case strings.HasSuffix(name, "Ms"):

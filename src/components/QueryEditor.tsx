@@ -18,6 +18,7 @@ import {
 } from "../types";
 import { getTemplateSrv } from "@grafana/runtime";
 import { GraphQLBuilder } from "./GraphQLBuilder";
+import { RESTEditor } from "./RESTEditor";
 import { QueryCodeEditor } from "./QueryCodeEditor";
 import { sqlSuggestions } from "../sqlSuggestions";
 import { presets } from "../presets";
@@ -38,6 +39,11 @@ const queryTypes: Array<SelectableValue<QueryType>> = [
     description: "Discover analytics across Cloudflare products",
   },
   { label: "GraphQL", value: "graphql", description: "Cloudflare GraphQL Analytics API" },
+  {
+    label: "Resources and audit",
+    value: "rest",
+    description: "Read-only operational state, inventory, and audit history",
+  },
   {
     label: "Analytics Engine SQL",
     value: "analytics",
@@ -95,7 +101,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
   const update = (change: Partial<CloudflareQuery>) => onChange({ ...query, ...change });
 
   useEffect(() => {
-    if (query.queryType === "graphql-builder") return;
+    if (query.queryType === "graphql-builder" || query.queryType === "rest") return;
     let active = true;
     setLoading(true);
     setError("");
@@ -216,6 +222,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
         <Field label="Scope">
           <Select
             aria-label="Scope"
+            disabled={query.queryType === "rest"}
             width={18}
             value={query.scope}
             options={[
@@ -646,6 +653,9 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
       )}
       {query.queryType === "graphql-builder" && (
         <GraphQLBuilder query={query} datasource={datasource} onChange={update} />
+      )}
+      {query.queryType === "rest" && (
+        <RESTEditor query={query} datasource={datasource} onChange={update} />
       )}
       {query.queryType === "graphql" && (
         <>

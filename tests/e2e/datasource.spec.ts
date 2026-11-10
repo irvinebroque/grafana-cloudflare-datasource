@@ -212,11 +212,7 @@ test("searches traces and renders an entire distributed trace", async ({ page, r
   await page.getByRole("heading", { name: "Node graph", exact: true }).getByRole("button").click();
   await expect(page.getByRole("button", { name: "Zoom in", exact: true })).toBeVisible();
   await page.getByRole("heading", { name: "Node graph", exact: true }).getByRole("button").click();
-  await page
-    .getByRole("switch")
-    .filter({ hasText: /GET|POST|fetch/ })
-    .first()
-    .click();
+  await page.getByRole("switch", { name: /\S/, disabled: false }).first().click();
   await expect(
     page.getByRole("link", { name: "Related Worker logs", exact: true }).first(),
   ).toBeVisible();
@@ -466,4 +462,36 @@ test("renders the simple trace dashboard with Grafana's native viewer", async ({
   ).toBeVisible();
   await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: ".local/native-trace-dashboard.png", fullPage: true });
+});
+
+test("renders real operational inventory with native Grafana tables", async ({ page }) => {
+  await page.goto("/explore");
+  const result = await example(page, "Tunnel · current status");
+  expect(result.results.A?.frames?.[0]?.data.values[0]?.length).toBeGreaterThan(0);
+  expect(result.results.A?.frames?.[0]?.schema.fields.map((field) => field.name)).toContain(
+    "status",
+  );
+  await expect(page.getByLabel("Read-only operation")).toBeVisible();
+  await expect(page.getByRole("grid")).toBeVisible();
+  await page.getByLabel("Read-only operation").click();
+  await page.getByText("Workers · deployment history", { exact: true }).click();
+  await page.getByRole("button", { name: "Browse resources", exact: true }).click();
+  await expect(page.getByLabel("Available resources")).toBeVisible();
+  await page.screenshot({ path: ".local/platform-resources.png", fullPage: true });
+});
+
+test("follows a real Audit Logs v2 entry into native resource history", async ({ page }) => {
+  await page.goto("/explore");
+  const result = await example(page, "Audit Logs v2 · events");
+  expect(result.results.A?.frames?.[0]?.data.values[0]?.length).toBeGreaterThan(0);
+  await expect(page.getByText("Show log level", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Log menu", exact: true }).first().click();
+  await page.getByText("Show log details", { exact: true }).click();
+  await page.getByRole("link", { name: "Resource history", exact: true }).first().click();
+  await expect(page.getByLabel("Read-only operation").last()).toBeVisible();
+  await expect(page.getByLabel("Resource ID", { exact: true })).not.toHaveValue("");
+  const response = mainQuery(page);
+  await page.getByRole("button", { name: "Run Cloudflare query", exact: true }).last().click();
+  const history = resultSchema.parse(await (await response).json());
+  expect(history.results.A?.error).toBeUndefined();
 });
