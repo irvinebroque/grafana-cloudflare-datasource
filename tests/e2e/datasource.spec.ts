@@ -78,12 +78,14 @@ test("shows real logs and exposes trace correlation", async ({ page }) => {
   const fields = result.results.A?.frames?.[0]?.schema.fields.map((field) => field.name);
   expect(fields).toContain("traceId");
   expect(fields?.slice(0, 2)).toEqual(["timestamp", "message"]);
+  const trace = result.results.A?.frames?.[0]?.data.values[fields?.indexOf("traceId") ?? -1]?.[0];
+  expect(trace).toBeTruthy();
   await expect(page.getByText("Show log level", { exact: true })).toBeVisible();
   await page.screenshot({ path: ".local/logs-validated.png", fullPage: true });
   await page.getByRole("button", { name: "Log menu", exact: true }).first().click();
   await page.getByText("Show log details", { exact: true }).click();
   await page.getByRole("link", { name: "View trace", exact: true }).first().click();
-  await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
+  await expect(page.getByLabel("Trace ID")).toHaveValue(String(trace));
 });
 
 test("fetches invocation log context and a separate full-range volume query", async ({ page }) => {

@@ -48,3 +48,13 @@ The plugin manifest also validates against Grafana's official JSON schema. The r
 The plugin is unsigned. Tests validate a development installation with an explicit unsigned-plugin allowlist. The native macOS executable was exercised; cross-compiled release executables are build-validated, not executed on their target systems. Docker was unavailable, so the Compose configuration has not been exercised in this session.
 
 Reports and screenshots from live validation are under ignored `.local/`; they can contain account data and are not included in the source or release ZIP.
+
+## Simplification follow-up
+
+After the 0.1.1 audit, the cleanup removed unused models, query flags, catalog properties, exports, an uncalled resource route, and obsolete Babel type dependencies. Builder defaults, metric defaults, result column discovery, numeric inference, row limits, and Grafana script requests now share their implementations. Grafana's concurrent query helper replaces the custom scheduler and retains the four-query limit. Production code decreased by 141 lines overall.
+
+The follow-up passes 33 Go tests with the race detector, 10 Vite Plus tests, strict TypeScript and anti-slop checks, `go vet`, Staticcheck with the previously documented style exclusion, and all five platform builds. Backend statement coverage is 81.7%. A further 30-second fuzz run exercised 382,180 cases without failure. Knip found no unused files, exports, or dependencies after accounting for the required local Oxlint executable; Go's dead-code analyzer found no unreachable functions, both with and without tests. `govulncheck` remains clean.
+
+All 10 browser checks and 15 live core API checks passed after restarting Grafana with the current build. The catalog sweep again passed 91 of 95 datasets, with the same four upstream 503 failures listed above. The dashboard installer also succeeded using the shared request helper. Local `--cf-auth` startup now validates the CLI login before reading its saved token, allowing `cf` to refresh expired credentials.
+
+The log-link browser check verifies navigation to the exact log trace ID. An independently selected stored trace verifies the full waterfall, since ingestion delays or sampling can leave an individual log's trace unavailable.
