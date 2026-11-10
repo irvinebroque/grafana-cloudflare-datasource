@@ -33,8 +33,10 @@ export interface CloudflareQuery extends DataQuery {
   sampled?: boolean;
   limit?: number;
   sql?: string;
+  analyticsSql?: string;
   params?: string;
   graphql?: string;
+  operationName?: string;
   variables?: string;
   dataPath?: string;
   telemetry?: string;

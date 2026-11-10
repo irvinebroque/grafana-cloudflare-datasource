@@ -1,10 +1,10 @@
 {
   "name": "cloudflare-grafana-datasource",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vp build && node scripts/finalize-frontend.mjs && node scripts/build-backend.mjs",
+    "build": "vp build && node scripts/build-backend.mjs",
     "check": "vp check",
     "test": "vp test run && go test ./...",
     "e2e": "playwright test",
@@ -32,5 +32,10 @@
     "typescript": "^7.0.2",
     "vite-plus": "1.5.1"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "overrides": {
+      "minimatch@>=7.0.0 <11.0.1": "11.0.1"
+    }
+  }
 }

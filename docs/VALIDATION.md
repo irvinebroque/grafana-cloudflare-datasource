@@ -1,6 +1,6 @@
 # Validation record
 
-Validated on 10 November 2026 against a real Cloudflare account with existing traffic. No synthetic Worker or billable resource was deployed.
+Version **0.1.1** validated on 10 November 2026 against a real Cloudflare account with existing traffic. No synthetic Worker or billable resource was deployed. See the [bug audit](AUDIT.md) for corrected defects and dependency findings.
 
 ## Environment
 
@@ -12,7 +12,7 @@ Validated on 10 November 2026 against a real Cloudflare account with existing tr
 
 ## Live API round trips through Grafana
 
-The core validation script passed all 11 checks: grouped Workers requests, weighted p99 CPU, logs, trace search, full distributed trace, parameterized SQL with interval macros, annotation SQL, variable SQL, GraphQL, legacy Analytics Engine SQL, and Workers telemetry.
+The core validation script passed all 15 checks: grouped Workers requests, weighted p99 CPU, logs, trace search, full distributed trace, parameterized SQL with interval macros, annotation SQL, variable SQL, GraphQL, legacy Analytics Engine SQL, legacy grouped interval macros, Container log defaults, custom log timestamps, numeric builder filters, and Workers telemetry.
 
 The SQL API catalog exposed 95 datasets. A catalog sweep executed a real, bounded SQL query through Grafana against every dataset. **91 succeeded**, including successful empty results where the account had no matching data. Two Logpush datasets required zone scope even though their catalog advertised accountTag columns.
 
@@ -29,15 +29,19 @@ A separate aggregated KV storage query also returned HTTP 503. These datasets re
 
 ## Browser and alert evaluation
 
-Playwright drove an actual Chrome browser against Grafana, loading the installed SystemJS frontend and Go executable. Eight checks cover masked configuration and connection testing, the catalog and grouped metrics, real logs and clicking through to a matching trace, invocation log context and full-range histograms, trace waterfalls, raw SQL errors and recovery, the imported starter dashboard and variable, and Grafana server-side alert evaluation.
+Playwright drove an actual Chrome browser against Grafana, loading the installed SystemJS frontend and Go executable. Ten checks cover masked configuration and connection testing, the catalog and grouped metrics, real logs and clicking through to a matching trace, invocation log context and full-range histograms, trace waterfalls, raw SQL errors and recovery, null JSON rejection and recovery in both API modes, independent SQL dialects with a real legacy grouped query, the imported starter dashboard and variable, and Grafana server-side alert evaluation.
 
 The alert test sends the datasource query to Grafana's alert evaluator and uses an expression reducer over each labeled series. It does not create a recurring alert or send notifications.
 
 ## Automated tests
 
-Go tests cover parameter binding and injection rejection; dataset quoting; row caps; sampling; scope and time request bodies; labeled time-series grouping, nulls and sorting; trace field structure, units, errors and log correlation; empty and invalid data; query error isolation; cancellation; retries and credential redaction; resource route restrictions and catalog caching; GraphQL flattening; and legacy timestamp compatibility. Tests pass with the race detector.
+All 32 Go tests pass with the race detector, covering parameter binding and injection rejection; dataset quoting; row caps; sampling; scope and time request bodies; labeled time-series grouping, nulls and sorting; trace field structure, units, errors and log correlation; empty and invalid data; query error isolation; cancellation; retries and credential redaction; pagination and catalog caching; GraphQL parsing and operation selection; legacy timestamp compatibility; and frame expansion limits. Backend statement coverage is 81.5%.
 
-Six Vite Plus tests cover SQL and builder interpolation boundaries, catalog metadata validation, Worker and Container context scoping and pagination bounds, and supplementary log-volume query construction. No module mocking is used. The account had no recent Container logs, so nonempty Container context semantics have not been live-validated.
+Ten Vite Plus tests cover SQL, telemetry and builder interpolation boundaries, query-mode migration and switching, catalog metadata validation, Worker and Container context scoping and pagination bounds, and supplementary log-volume query construction. Strict TypeScript and all generic anti-slop rules pass. No module mocking is used. The account had no recent Container logs, so nonempty Container context semantics have not been live-validated.
+
+The final 30-second malformed-response fuzz run exercised 373,113 cases with no failures, converting accepted results into each frame format and Grafana's JSON encoding. An earlier run exercised another 405,660 cases. `go vet` and Staticcheck pass; Staticcheck's error-capitalization style rule is excluded to retain proper product names. Initial and incremental watch builds were checked for Grafana-compatible SystemJS output.
+
+`govulncheck` reports no vulnerabilities after the dependency and Go toolchain upgrades. The npm dependency scan has two remaining moderate advisories in Grafana's external React Router dependency, detailed in the audit report.
 
 The plugin manifest also validates against Grafana's official JSON schema. The release ZIP passed its integrity and SHA-256 checks, and was extracted for the final Grafana browser and API checks.
 

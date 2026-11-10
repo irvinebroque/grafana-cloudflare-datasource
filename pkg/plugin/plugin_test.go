@@ -245,14 +245,14 @@ func TestFullRangeLogVolumeMetadata(t *testing.T) {
 	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"data":[{"time":"2026-11-10 09:00:00","level":"error","logs":5}]}`)
 	})
-	source := Query{QueryType: "builder", Format: "logs", Dataset: "logs.workersLogs"}
-	q := Query{QueryType: "builder", Format: "timeseries", Dataset: "logs.workersLogs", Metrics: []Metric{{Aggregation: "count", Alias: "logs"}}, GroupBy: []string{"level"}, LogVolume: true, VolumeSource: &source}
+	source := json.RawMessage(`{"refId":"A","datasource":{"uid":"uid"},"queryType":"builder","format":"logs","dataset":"logs.workersLogs"}`)
+	q := Query{QueryType: "builder", Format: "timeseries", Dataset: "logs.workersLogs", Metrics: []Metric{{Aggregation: "count", Alias: "logs"}}, GroupBy: []string{"level"}, LogVolume: true, VolumeSource: source}
 	result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
 	if result.Error != nil {
 		t.Fatal(result.Error)
 	}
 	meta := result.Frames[0].Meta.Custom.(map[string]any)
-	if meta["logsVolumeType"] != "FullRange" || result.Frames[0].Name != "error" || meta["sourceQuery"].(*Query).Format != "logs" {
+	if meta["logsVolumeType"] != "FullRange" || result.Frames[0].Name != "error" || string(meta["sourceQuery"].(json.RawMessage)) != string(source) {
 		t.Fatalf("%#v", meta)
 	}
 }

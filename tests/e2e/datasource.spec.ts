@@ -97,9 +97,39 @@ test("fetches invocation log context and a separate full-range volume query", as
   });
 
   await example(page, "Workers · logs");
-  const volumeResult = resultSchema.parse(await (await volume).json());
+  const volumeJSON = await (await volume).json();
+  const volumeResult = resultSchema.parse(volumeJSON);
   expect(volumeResult.results["log-volume-A"]?.error).toBeUndefined();
   expect(volumeResult.results["log-volume-A"]?.frames?.length).toBeGreaterThan(0);
+
+  const metadata = z
+    .object({
+      results: z.record(
+        z.string(),
+        z.object({
+          frames: z.array(
+            z.object({
+              schema: z.object({
+                meta: z.object({
+                  custom: z.object({
+                    sourceQuery: z.object({ refId: z.string() }),
+                    logsVolumeType: z.string(),
+                  }),
+                }),
+              }),
+            }),
+          ),
+        }),
+      ),
+    })
+    .parse(volumeJSON);
+
+  expect(metadata.results["log-volume-A"]?.frames[0]?.schema.meta.custom.sourceQuery.refId).toBe(
+    "A",
+  );
+  expect(metadata.results["log-volume-A"]?.frames[0]?.schema.meta.custom.logsVolumeType).toBe(
+    "FullRange",
+  );
   await page.getByRole("button", { name: "Log menu", exact: true }).first().click();
 
   const context = page.waitForResponse((response) => {
@@ -178,6 +208,65 @@ test("edits raw SQL and recovers after an upstream validation error", async ({ p
   const recovered = page.waitForResponse((response) => response.url().includes("/api/ds/query"));
   await page.getByRole("button", { name: "Run Cloudflare query" }).click();
   expect(resultSchema.parse(await (await recovered).json()).results.A?.error).toBeUndefined();
+});
+
+test("rejects null JSON without crashing and recovers in both raw API modes", async ({ page }) => {
+  await page.goto("/explore");
+
+  for (const mode of ["GraphQL", "Workers telemetry"]) {
+    await page.getByLabel("Query language").click();
+    await page.getByText(mode, { exact: true }).click();
+    const input = page.getByLabel(mode === "GraphQL" ? "GraphQL variables" : "Telemetry query");
+    const valid = mode === "GraphQL" ? "{}" : await input.inputValue();
+    await input.fill("null");
+    const failed = mainQuery(page);
+    await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+    expect(resultSchema.parse(await (await failed).json()).results.A?.error).toContain(
+      "JSON object",
+    );
+    await input.fill(valid);
+    const recovered = mainQuery(page);
+    await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+    expect(resultSchema.parse(await (await recovered).json()).results.A?.error).toBeUndefined();
+  }
+});
+
+test("keeps separate SQL dialects when switching query languages", async ({ page, request }) => {
+  const catalog = z
+    .object({ datasets: z.array(z.object({ name: z.string() })) })
+    .parse(await (await request.get(`/api/datasources/uid/${uid}/resources/datasets`)).json());
+
+  const dataset = catalog.datasets.find((entry) =>
+    entry.name.startsWith("events.analyticsEngine."),
+  );
+
+  test.skip(!dataset, "The account has no Analytics Engine dataset");
+
+  if (!dataset) return;
+  const name = dataset.name.slice("events.analyticsEngine.".length);
+  expect(name).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
+
+  const unified =
+    "SELECT $__timeGroup(timestamp) AS time, COUNT(*) AS requests FROM events.workersInvocations GROUP BY time ORDER BY time LIMIT 10";
+
+  const legacy = `SELECT $__timeGroup(timestamp) AS time, SUM(_sample_interval) AS events FROM ${name} WHERE timestamp >= toDateTime($__fromTime) AND timestamp <= toDateTime($__toTime) GROUP BY time ORDER BY time LIMIT 10`;
+  await page.goto("/explore");
+  await page.getByLabel("Query language").click();
+  await page.getByText("SQL", { exact: true }).click();
+  await page.getByLabel("SQL query").fill(unified);
+  await page.getByLabel("Query language").click();
+  await page.getByText("Analytics Engine SQL", { exact: true }).click();
+  await expect(page.getByLabel("SQL query")).toContainText("your_dataset");
+  await page.getByLabel("SQL query").fill(legacy);
+  await page.getByLabel("Query language").click();
+  await page.getByText("SQL", { exact: true }).click();
+  await expect(page.getByLabel("SQL query")).toHaveValue(unified);
+  await page.getByLabel("Query language").click();
+  await page.getByText("Analytics Engine SQL", { exact: true }).click();
+  await expect(page.getByLabel("SQL query")).toHaveValue(legacy);
+  const response = mainQuery(page);
+  await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+  expect(resultSchema.parse(await (await response).json()).results.A?.error).toBeUndefined();
 });
 
 test("renders the starter dashboard with its SQL query variable", async ({ page }) => {

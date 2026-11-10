@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { interpolateQuery } from "./interpolation";
 import { catalogSchema, type CloudflareQuery } from "./types";
 import { contextRange, contextTarget, volumeTarget } from "./logContext";
+import { migrateQuery, queryForMode } from "./queryState";
+import { defaultSQL } from "./types";
 
 describe("query boundaries", () => {
   it("uses SQL escaping for SQL and raw values only for parameterized builder filters", () => {
@@ -48,6 +50,66 @@ describe("query boundaries", () => {
   });
 });
 
+describe("query mode transitions", () => {
+  it("keeps the unified SQL and Analytics Engine dialects separate", () => {
+    const unified: CloudflareQuery = { refId: "A", queryType: "sql", sql: "SELECT unified" };
+    const legacy = queryForMode(unified, "analytics");
+    legacy.analyticsSql = "SELECT legacy";
+    const restored = queryForMode(legacy, "sql");
+
+    expect(restored.sql).toBe("SELECT unified");
+    expect(queryForMode(restored, "analytics").analyticsSql).toBe("SELECT legacy");
+  });
+
+  it("migrates older legacy queries without sending their dialect to the unified endpoint", () => {
+    const migrated = queryForMode(
+      { refId: "A", queryType: "analytics", sql: "SELECT legacy" },
+      "sql",
+    );
+
+    expect(migrated.sql).toBe(defaultSQL);
+    expect(migrated.analyticsSql).toBe("SELECT legacy");
+    const edited = migrateQuery({ refId: "A", queryType: "analytics", sql: "SELECT old" });
+    edited.analyticsSql = "SELECT edited";
+    expect(queryForMode(edited, "sql").sql).toBe(defaultSQL);
+  });
+
+  it("clears stale trace and dataset settings when choosing a different mode", () => {
+    const trace: CloudflareQuery = {
+      refId: "A",
+      queryType: "builder",
+      dataset: "logs.traces",
+      traceId: "trace",
+      format: "traces",
+      timeField: "endTime",
+      scope: "zone",
+    };
+
+    const telemetry = queryForMode(trace, "telemetry");
+    expect(telemetry.dataset).toBeUndefined();
+    expect(telemetry.traceId).toBe("");
+    expect(telemetry.scope).toBe("account");
+    const builder = queryForMode(telemetry, "builder");
+    expect(builder.dataset).toBe("events.workersInvocations");
+    expect(builder.timeField).toBe("timestamp");
+    expect(builder.format).toBe("timeseries");
+  });
+
+  it("interpolates telemetry JSON and legacy SQL using the appropriate format", () => {
+    const calls: Array<[string, string]> = [];
+    interpolateQuery(
+      { refId: "A", analyticsSql: "SELECT $worker", telemetry: '{"worker":${worker:json}}' },
+      (value, format) => {
+        calls.push([value, format]);
+
+        return value;
+      },
+    );
+    expect(calls).toContainEqual(["SELECT $worker", "sqlstring"]);
+    expect(calls).toContainEqual(['{"worker":${worker:json}}', "json"]);
+  });
+});
+
 describe("log context", () => {
   it("builds a full-range volume query without inheriting the log row limit", () => {
     const query = {
@@ -79,6 +141,12 @@ describe("log context", () => {
     expect(target.accountId).toBe("account");
     expect(target.filters).toEqual([{ field: "requestId", operator: "=", value: "request" }]);
     expect(target.format).toBe("logs");
+    expect(
+      contextTarget(
+        { timestamp: 10000, accountId: "resolved" },
+        { refId: "A", accountId: "$account" },
+      ).accountId,
+    ).toBe("resolved");
   });
 
   it("falls back to the worker and excludes the anchor during directional pagination", () => {

@@ -12,6 +12,11 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
+const maxFrameFields = 1000
+const maxFrameCells = 2000000
+const maxTimeSeries = 10000
+const maxSeriesLabelBytes = 32 << 20
+
 func number(value any) (*float64, bool) {
 	if value == nil {
 		return nil, true
@@ -104,6 +109,20 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 	if truncated {
 		rows = rows[:maxRows]
 	}
+	keys := columnKeys(rows, result)
+	if len(keys) > maxFrameFields {
+		return nil, fmt.Errorf("query returned too many columns (limit %d); select fewer fields", maxFrameFields)
+	}
+	if len(rows) > 0 && len(keys) > maxFrameCells/len(rows) {
+		return nil, fmt.Errorf("query exceeds the %d frame cell limit; reduce columns or rows", maxFrameCells)
+	}
+	seen := map[string]bool{}
+	for _, column := range result.Meta {
+		if seen[column.Name] {
+			return nil, fmt.Errorf("result contains duplicate column %q; use unique aliases", column.Name)
+		}
+		seen[column.Name] = true
+	}
 	var frames data.Frames
 	var err error
 	switch q.Format {
@@ -121,11 +140,13 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 	if err != nil {
 		return nil, err
 	}
-	for _, frame := range frames {
+	for index, frame := range frames {
 		if frame.Meta == nil {
 			frame.Meta = &data.FrameMeta{}
 		}
-		frame.Meta.ExecutedQueryString = executed
+		if index == 0 {
+			frame.Meta.ExecutedQueryString = executed
+		}
 		frame.Meta.Custom = map[string]any{"statistics": result.Statistics, "rows": len(rows), "accountId": q.AccountID, "zoneId": q.ZoneID, "dataset": q.Dataset}
 		limit := maxRows
 		if q.QueryType == "builder" || q.QueryType == "" {
@@ -338,8 +359,13 @@ func seriesFrames(rows []map[string]any, q Query, refID string, result SQLResult
 		metric string
 		points []point
 	}
-	groups := map[string]*series{}
-	order := []string{}
+	type seriesKey struct {
+		metric string
+		labels string
+	}
+	groups := map[seriesKey]*series{}
+	order := []seriesKey{}
+	labelBytes := 0
 	for _, row := range rows {
 		t, ok := timestamp(row[timeKey])
 		if !ok || t == nil {
@@ -350,10 +376,18 @@ func seriesFrames(rows []map[string]any, q Query, refID string, result SQLResult
 			labels[key] = textValue(row[key])
 		}
 		encoded, _ := json.Marshal(labels)
+		encodedLabels := string(encoded)
 		for _, metric := range metricNames {
-			key := metric + ":" + string(encoded)
+			key := seriesKey{metric: metric, labels: encodedLabels}
 			s := groups[key]
 			if s == nil {
+				if len(groups) >= maxTimeSeries {
+					return nil, fmt.Errorf("query exceeds the %d time series limit; reduce dimensions or metrics", maxTimeSeries)
+				}
+				labelBytes += len(encoded)
+				if labelBytes > maxSeriesLabelBytes {
+					return nil, fmt.Errorf("time series labels exceed 32 MiB; reduce dimensions or metrics")
+				}
 				s = &series{labels: labels, metric: metric}
 				groups[key] = s
 				order = append(order, key)

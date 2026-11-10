@@ -18,7 +18,7 @@ flowchart LR
 
 - Grafana **13.3+**.
 - Your Cloudflare account ID and an [API token](https://developers.cloudflare.com/analytics/sql-api/get-started/) with **Account Analytics Read**. Add product and zone permissions as needed.
-- To build: Node.js **24+**, pnpm, and Go **1.27.2+**.
+- To build: Node.js **24+**, pnpm, and Go **1.27.3+**.
 
 ## Getting started
 
@@ -111,11 +111,11 @@ flowchart LR
 
 ### Use other Cloudflare APIs
 
-| Query language           | How to use it                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------- |
-| **GraphQL**              | Start with the included Workers query; set the result data path and time column. |
-| **Workers telemetry**    | Paste a Query Builder request; use `events.events` as the result path for logs.  |
-| **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.      |
+| Query language           | How to use it                                                                                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GraphQL**              | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries. |
+| **Workers telemetry**    | Paste a Query Builder request; use `events.events` as the result path for logs.                                                                     |
+| **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.                                                                         |
 
 ## Run locally with Docker
 
@@ -135,6 +135,7 @@ Open [localhost:3100](http://localhost:3100) and sign in with `admin` / `admin` 
 - Sampling can affect metrics and leave gaps in logs or traces.
 - A row-limit warning means results may be incomplete; narrow the time range or increase the limit.
 - See [validation and known limitations](docs/VALIDATION.md).
+- See the [0.1.1 bug audit](docs/AUDIT.md) for fixes and dependency findings.
 
 ## Development
 
@@ -146,6 +147,8 @@ pnpm exec vp test run
 go test -race ./...
 pnpm exec vp run build
 ```
+
+Use `pnpm exec vp run dev` for incremental frontend builds. Initial and subsequent builds emit Grafana-compatible SystemJS modules. Rebuild the Go executable and restart Grafana after backend changes.
 
 ## License
 

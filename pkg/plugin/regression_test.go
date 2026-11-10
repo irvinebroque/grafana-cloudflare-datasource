@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -132,5 +133,238 @@ func TestResourceSelectorsIncludeAllPages(t *testing.T) {
 				t.Errorf("selector omitted pages: %s (pages %v)", body, pages)
 			}
 		})
+	}
+}
+
+func TestNonFiniteAndInvalidNumbersNeverBecomeZero(t *testing.T) {
+	for _, value := range []any{"not-a-number", "NaN", "+Inf", json.Number("1e500")} {
+		n, ok := number(value)
+		if ok || n != nil {
+			t.Errorf("invalid number accepted: %v -> %v", value, n)
+		}
+	}
+	if _, ok := timestamp("1e100"); ok {
+		t.Error("overflowing timestamp accepted")
+	}
+	result, _ := decodeSQL([]byte(`{"data":[{"traceId":"a","spanId":"b","startTime":"2026-11-10 09:00:00","durationMs":-1}]}`))
+	if _, err := traceFrames(result.Data, "A"); err == nil {
+		t.Error("negative trace duration accepted")
+	}
+}
+
+func TestResourcePaginationFailsWithoutPartialSuccess(t *testing.T) {
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			w.WriteHeader(403)
+			fmt.Fprint(w, `{"success":false}`)
+			return
+		}
+		fmt.Fprint(w, `{"success":true,"result":[{"id":"first","name":"First"}],"result_info":{"page":1,"total_pages":2}}`)
+	})
+	var status int
+	sender := backend.CallResourceResponseSenderFunc(func(response *backend.CallResourceResponse) error { status = response.Status; return nil })
+	d.CallResource(context.Background(), &backend.CallResourceRequest{Method: "GET", Path: "accounts", URL: "/accounts"}, sender)
+	if status != 502 || len(d.cache) != 0 {
+		t.Errorf("partial list became successful or cached: %d", status)
+	}
+}
+
+func TestRetryAfterNeverOverflowsOrIgnoresHTTPDates(t *testing.T) {
+	for _, header := range []string{"9223372036854775807", time.Now().Add(time.Minute).UTC().Format(http.TimeFormat)} {
+		calls := 0
+		d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.Header().Set("Retry-After", header)
+			w.WriteHeader(429)
+		})
+		if _, err := d.client.request(context.Background(), http.MethodGet, "/x", nil); err == nil || calls != 1 {
+			t.Errorf("ignored Retry-After %q: %d calls %v", header, calls, err)
+		}
+	}
+}
+
+func TestHealthRejectsMalformedCatalog(t *testing.T) {
+	for _, body := range []string{`<html>upstream unavailable</html>`, `{"success":true}`, `{"datasets":null}`} {
+		d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+		result, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
+		if err != nil || result.Status != backend.HealthStatusError {
+			t.Errorf("invalid catalog became healthy: %s %+v %v", body, result, err)
+		}
+	}
+}
+
+func TestLegacySQLUsesItsOwnTextAndGraphQLAllowsComments(t *testing.T) {
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/graphql" {
+			fmt.Fprint(w, `{"data":{"rows":[{"value":1}]}}`)
+			return
+		}
+		buffer, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if string(buffer) != "SELECT legacy" {
+			t.Errorf("wrong SQL dialect: %s", buffer)
+		}
+		fmt.Fprint(w, `{"data":[]}`)
+	})
+	legacy := Query{QueryType: "analytics", Format: "table", SQL: "SELECT unified", AnalyticsSQL: "SELECT legacy"}
+	if response := d.query(context.Background(), backend.PluginContext{}, dataQuery(legacy)); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	graphql := Query{QueryType: "graphql", Format: "table", GraphQL: "# Saved query\n query { rows { value } }", DataPath: "rows"}
+	if response := d.query(context.Background(), backend.PluginContext{}, dataQuery(graphql)); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+}
+
+func TestLogVolumeMarksCappedResultsLimited(t *testing.T) {
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"time":"2026-11-10 09:00:00","level":"info","logs":1}]}`)
+	})
+	d.settings.MaxRows = 1
+	q := Query{QueryType: "builder", Dataset: "logs.workersLogs", Format: "timeseries", LogVolume: true, GroupBy: []string{"level"}, Metrics: []Metric{{Aggregation: "count", Alias: "logs"}}, Limit: 10000}
+	response := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
+	if response.Error != nil {
+		t.Fatal(response.Error)
+	}
+	custom := response.Frames[0].Meta.Custom.(map[string]any)
+	if custom["logsVolumeType"] != "Limited" || custom["accountId"] != accountID {
+		t.Errorf("misleading volume metadata: %#v", custom)
+	}
+}
+
+func TestRawTimeSeriesOrdersByItsSelectedTimeColumn(t *testing.T) {
+	q := Query{Dataset: "events.workersInvocations", Format: "timeseries", Columns: []string{"timestamp", "cpuTimeUs"}}
+	sql, _, err := buildSQL(q, dataQuery(q), 100)
+	if err != nil || !strings.Contains(sql, "ORDER BY `timestamp` ASC") {
+		t.Errorf("invalid raw-series SQL: %s %v", sql, err)
+	}
+}
+
+func FuzzResponseFrames(f *testing.F) {
+	for _, seed := range []string{`null`, `{"data":[]}`, `{"data":[null]}`, `{"data":[{"time":"2026-11-10 09:00:00","value":1}]}`, `{"meta":[{"name":"value","type":"Nullable(Float64)"}],"data":[{"timestamp":"2026-11-10 09:00:00","value":"NaN"}]}`} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, body string) {
+		if len(body) > 65536 {
+			t.Skip()
+		}
+		result, err := decodeSQL([]byte(body))
+		if err != nil {
+			return
+		}
+		for _, format := range []string{"table", "timeseries", "logs", "traces"} {
+			frames, err := resultFrames(result, Query{Format: format}, "A", "uid", "query", 100)
+			if err != nil {
+				continue
+			}
+			for _, frame := range frames {
+				if _, err := data.FrameToJSONCache(frame); err != nil {
+					t.Fatalf("frame cannot be encoded: %v", err)
+				}
+			}
+		}
+	})
+}
+
+func TestGraphQLDocumentsAreParsedBeforeExecution(t *testing.T) {
+	for _, source := range []string{
+		"# Saved query\nquery { viewer { id } }",
+		"\ufeffquery { viewer { id } }",
+		"fragment Fields on Viewer { id } query { viewer { ...Fields } }",
+	} {
+		if err := validateGraphQL(source, ""); err != nil {
+			t.Errorf("valid read rejected: %v", err)
+		}
+	}
+	for _, source := range []string{
+		"mutation { update { id } }",
+		"subscription { updates { id } }",
+		"query { viewer { id } } mutation { update { id } }",
+		"query {",
+		"fragment Fields on Viewer { id }",
+	} {
+		if err := validateGraphQL(source, ""); err == nil {
+			t.Errorf("invalid/non-read document accepted: %s", source)
+		}
+	}
+	document := "query First { viewer { id } } query Second { viewer { id } }"
+	if validateGraphQL(document, "") == nil || validateGraphQL(document, "Missing") == nil || validateGraphQL(document, "Second") != nil {
+		t.Error("operation-name selection is invalid")
+	}
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Operation string `json:"operationName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if request.Operation != "Second" {
+			t.Error("operation name was not sent to Cloudflare")
+		}
+		fmt.Fprint(w, `{"data":{"value":1}}`)
+	})
+	q := Query{QueryType: "graphql", Format: "table", GraphQL: document, OperationName: "Second"}
+	if response := d.query(context.Background(), backend.PluginContext{}, dataQuery(q)); response.Error != nil {
+		t.Fatal(response.Error)
+	}
+}
+
+func TestLegacyTimeGroupDoesNotUseUnsupportedIdentifierQuotes(t *testing.T) {
+	q := dataQuery(Query{})
+	sql := expandSQLMacros("SELECT $__timeGroup(timestamp) AS time", q, accountID, zoneID, true)
+	if strings.Contains(sql, "`") || !strings.Contains(sql, "toStartOfInterval(timestamp,") {
+		t.Errorf("legacy macro uses unsupported quoting: %s", sql)
+	}
+}
+
+func TestSparseResponsesCannotExpandIntoUnboundedFrames(t *testing.T) {
+	rows := make([]map[string]any, 3000)
+	for i := range rows {
+		rows[i] = map[string]any{fmt.Sprintf("field_%d", i%1000): json.Number("1")}
+	}
+	if _, err := resultFrames(SQLResult{Data: rows}, Query{Format: "table"}, "A", "", "", 10000); err == nil || !strings.Contains(err.Error(), "cell limit") {
+		t.Fatalf("sparse table was not bounded: %v", err)
+	}
+	row := map[string]any{}
+	for i := 0; i < 1001; i++ {
+		row[fmt.Sprintf("field_%d", i)] = json.Number("1")
+	}
+	if _, err := resultFrames(SQLResult{Data: []map[string]any{row}}, Query{Format: "table"}, "A", "", "", 10000); err == nil || !strings.Contains(err.Error(), "too many columns") {
+		t.Fatalf("wide table was not bounded: %v", err)
+	}
+	rows = make([]map[string]any, 60)
+	for i := range rows {
+		rows[i] = map[string]any{"time": "2026-11-10 09:00:00", "dimension": fmt.Sprintf("group_%d", i)}
+		for metric := 0; metric < 200; metric++ {
+			rows[i][fmt.Sprintf("metric_%d", metric)] = json.Number("1")
+		}
+	}
+	if _, err := resultFrames(SQLResult{Data: rows}, Query{Format: "timeseries"}, "A", "", "", 10000); err == nil || !strings.Contains(err.Error(), "time series limit") {
+		t.Fatalf("series expansion was not bounded: %v", err)
+	}
+}
+
+func TestDuplicateRawSQLColumnsAreRejected(t *testing.T) {
+	result, err := decodeSQL([]byte(`{"meta":[{"name":"value","type":"UInt64"},{"name":"value","type":"UInt64"}],"data":[{"value":1}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resultFrames(result, Query{Format: "table"}, "A", "", "", 100); err == nil {
+		t.Error("ambiguous raw column names were accepted")
+	}
+}
+
+func TestRepeatedMetricLabelsHaveAnOutputBudget(t *testing.T) {
+	row := map[string]any{"time": "2026-11-10 09:00:00"}
+	for i := 0; i < 100; i++ {
+		row[fmt.Sprintf("metric_%d", i)] = json.Number("1")
+	}
+	for i := 0; i < 200; i++ {
+		row[fmt.Sprintf("dimension_%d", i)] = strings.Repeat("x", 2000)
+	}
+	if _, err := resultFrames(SQLResult{Data: []map[string]any{row}}, Query{Format: "timeseries"}, "A", "", "", 100); err == nil || !strings.Contains(err.Error(), "labels exceed") {
+		t.Fatalf("repeated labels have no output limit: %v", err)
 	}
 }

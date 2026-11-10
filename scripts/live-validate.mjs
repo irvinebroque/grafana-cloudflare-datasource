@@ -32,6 +32,7 @@ const zones = await request(`/api/datasources/uid/${uid}/resources/zones`);
 const report = {
   time: new Date().toISOString(),
   grafana: await request("/api/health"),
+  plugin: (await request("/api/plugins/cloudflare-cloudflare-datasource/settings")).info?.version,
   catalogSize: catalog.datasets.length,
   checks: [],
   catalog: [],
@@ -65,7 +66,7 @@ async function query(name, target, destination = report.checks) {
 
   const entry = {
     name,
-    ok: Boolean(response && !response.error),
+    ok: Boolean(response && !response.error && response.status === 200 && response.frames?.length),
     error: response?.error,
     frames: response?.frames?.length ?? 0,
     rows: response?.frames?.[0]?.data?.values?.[0]?.length ?? 0,
@@ -124,6 +125,14 @@ if (traceId)
     traceId,
     limit: 10000,
   });
+else {
+  report.checks.push({
+    name: "Full distributed trace",
+    ok: false,
+    error: "No recent trace ID was returned by Workers logs",
+  });
+  console.log("FAIL Full distributed trace (no recent trace ID)");
+}
 
 await query("SQL macros and parameters", {
   queryType: "sql",
@@ -161,6 +170,38 @@ if (wae)
     sql: `SELECT timestamp, blob1 FROM ${wae.name.slice("events.analyticsEngine.".length)} WHERE timestamp >= toDateTime($__fromTime) LIMIT 5`,
     format: "table",
   });
+
+if (wae)
+  await query("Legacy grouped SQL macros", {
+    queryType: "analytics",
+    analyticsSql: `SELECT $__timeGroup(timestamp) AS time, SUM(_sample_interval) AS events FROM ${wae.name.slice("events.analyticsEngine.".length)} WHERE timestamp >= toDateTime($__fromTime) AND timestamp <= toDateTime($__toTime) GROUP BY time ORDER BY time LIMIT 10`,
+    format: "timeseries",
+  });
+
+await query("Container log defaults", {
+  queryType: "builder",
+  dataset: "logs.containerLogs",
+  format: "logs",
+  limit: 2,
+});
+
+await query("Custom log timestamp", {
+  queryType: "builder",
+  dataset: "logs.traces",
+  format: "logs",
+  columns: ["startTime", "spanName"],
+  timeField: "startTime",
+  limit: 2,
+});
+
+await query("Numeric builder filters", {
+  queryType: "builder",
+  dataset: "events.workersInvocations",
+  format: "table",
+  metrics: [{ aggregation: "count", alias: "requests" }],
+  filters: [{ field: "cpuTimeUs", operator: ">", value: "1000" }],
+  limit: 2,
+});
 
 await query("Workers telemetry", {
   queryType: "telemetry",

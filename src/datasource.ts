@@ -89,8 +89,8 @@ export class DataSource
       .parse(row.dataFrame.meta?.custom ?? {});
 
     const dataset =
-      original?.dataset ||
       metadata.dataset ||
+      ((original?.queryType ?? "builder") === "builder" ? original?.dataset : undefined) ||
       (container ? "logs.containerLogs" : script ? "logs.workersLogs" : "");
 
     if (!["logs.workersLogs", "logs.containerLogs"].includes(dataset)) return null;
@@ -98,6 +98,7 @@ export class DataSource
     return contextTarget(
       {
         timestamp: row.timeEpochMs,
+        accountId: metadata.accountId,
         requestId: z.string().optional().catch(undefined).parse(request?.values[row.rowIndex]),
         scriptName: z.string().optional().catch(undefined).parse(script?.values[row.rowIndex]),
         containerId: z.string().optional().catch(undefined).parse(container?.values[row.rowIndex]),

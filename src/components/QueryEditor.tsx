@@ -17,6 +17,7 @@ import {
   type ResultFormat,
 } from "../types";
 import { presets } from "../presets";
+import { migrateQuery, queryForMode } from "../queryState";
 
 type Props = QueryEditorProps<DataSource, CloudflareQuery, CloudflareOptions>;
 
@@ -72,7 +73,7 @@ const rowStyle: React.CSSProperties = {
 };
 
 export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }: Props) {
-  const query = { ...defaultQuery, ...stored };
+  const query = migrateQuery({ ...defaultQuery, ...stored });
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -187,42 +188,6 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
       ),
     });
 
-  const changeType = (type: QueryType) => {
-    if (type === "graphql")
-      update({
-        queryType: type,
-        graphql: query.graphql || defaultGraphQL,
-        format: "timeseries",
-        groupBy: [],
-        dataPath: "viewer.accounts.workersInvocationsAdaptive",
-        timeField: "dimensions.datetimeMinute",
-      });
-    else if (type === "telemetry")
-      update({
-        queryType: type,
-        telemetry: query.telemetry || defaultTelemetry,
-        dataPath: "events.events",
-        format: "logs",
-        timeField: "timestamp",
-      });
-    else if (type === "analytics")
-      update({
-        queryType: type,
-        sql: query.queryType === "analytics" ? query.sql : defaultAnalyticsSQL,
-        timeField: "",
-        format: "timeseries",
-        groupBy: [],
-      });
-    else
-      update({
-        queryType: type,
-        sql: query.sql || defaultSQL,
-        timeField: "",
-        format: "timeseries",
-        groupBy: [],
-      });
-  };
-
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={rowStyle}>
@@ -233,7 +198,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
             value={query.queryType}
             options={queryTypes}
             onChange={(value) => {
-              if (value.value) changeType(value.value);
+              if (value.value) onChange(queryForMode(query, value.value));
             }}
           />
         </Field>
@@ -642,15 +607,27 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
             <TextArea
               aria-label="SQL query"
               rows={8}
-              value={query.sql ?? defaultSQL}
-              onChange={(event) => update({ sql: event.currentTarget.value })}
+              value={
+                query.queryType === "analytics"
+                  ? (query.analyticsSql ?? query.sql ?? defaultAnalyticsSQL)
+                  : (query.sql ?? defaultSQL)
+              }
+              onChange={(event) =>
+                update(
+                  query.queryType === "analytics"
+                    ? { analyticsSql: event.currentTarget.value }
+                    : { sql: event.currentTarget.value },
+                )
+              }
               onBlur={onRunQuery}
             />
           </Field>
           {query.queryType === "sql" && (
             <Field
               label="SQL parameters (JSON)"
-              description="Bind values with $name placeholders. For dashboard variables use a JSON value such as $worker:json in a parameter object."
+              description={
+                'Bind values with $name placeholders. For dashboard variables use {"worker": ${worker:json}}.'
+              }
             >
               <TextArea
                 aria-label="SQL parameters"
@@ -687,6 +664,16 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
               rows={2}
               value={query.variables ?? ""}
               onChange={(event) => update({ variables: event.currentTarget.value })}
+            />
+          </Field>
+          <Field
+            label="Operation name"
+            description="Required when the document contains multiple queries."
+          >
+            <Input
+              aria-label="GraphQL operation name"
+              value={query.operationName ?? ""}
+              onChange={(event) => update({ operationName: event.currentTarget.value })}
             />
           </Field>
         </>
@@ -735,18 +722,16 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           />
         </Field>
       )}
-      {query.queryType !== "builder" && (
-        <Field
-          label="Time column"
-          description="Optional column name for time series; nested GraphQL fields use dot notation."
-        >
-          <Input
-            aria-label="Time column"
-            value={query.timeField ?? ""}
-            onChange={(event) => update({ timeField: event.currentTarget.value })}
-          />
-        </Field>
-      )}
+      <Field
+        label="Time column"
+        description="Timestamp column for time series and logs. Nested GraphQL fields use dot notation."
+      >
+        <Input
+          aria-label="Time column"
+          value={query.timeField ?? ""}
+          onChange={(event) => update({ timeField: event.currentTarget.value })}
+        />
+      </Field>
       <div style={rowStyle}>
         <Button icon="play" onClick={onRunQuery}>
           Run Cloudflare query

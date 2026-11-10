@@ -38,10 +38,17 @@ func intervalSeconds(q backend.DataQuery) int64 {
 }
 
 func expandMacros(sql string, dq backend.DataQuery, account, zone string) string {
+	return expandSQLMacros(sql, dq, account, zone, false)
+}
+
+func expandSQLMacros(sql string, dq backend.DataQuery, account, zone string, legacy bool) string {
 	seconds := intervalSeconds(dq)
 	sql = timeGroup.ReplaceAllStringFunc(sql, func(match string) string {
 		field := timeGroup.FindStringSubmatch(match)[1]
-		return fmt.Sprintf("toStartOfInterval(`%s`, INTERVAL '%d' SECOND)", field, seconds)
+		if !legacy {
+			field = "`" + field + "`"
+		}
+		return fmt.Sprintf("toStartOfInterval(%s, INTERVAL '%d' SECOND)", field, seconds)
 	})
 	return strings.NewReplacer(
 		"$__interval_ms", strconv.FormatInt(seconds*1000, 10),
@@ -68,6 +75,7 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 	}
 	params := make(map[string]any)
 	var selectParts, groupParts []string
+	bucketed := false
 	selected := map[string]bool{}
 	addColumn := func(name string) error {
 		if selected[name] {
@@ -128,6 +136,7 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 			selectParts = append(selectParts, bucket+" AS time")
 			groupParts = append(groupParts, "time")
 			selected["time"] = true
+			bucketed = true
 		}
 		for _, name := range q.GroupBy {
 			if err := addColumn(name); err != nil {
@@ -234,7 +243,19 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 			sql += " ORDER BY startTime ASC"
 		}
 	} else if format == "timeseries" || q.TimeSeries {
-		sql += " ORDER BY time ASC"
+		if bucketed {
+			sql += " ORDER BY time ASC"
+		} else {
+			name := q.TimeField
+			if name == "" {
+				name = "timestamp"
+			}
+			column, err := fieldSQL(name)
+			if err != nil {
+				return "", nil, err
+			}
+			sql += " ORDER BY " + column + " ASC"
+		}
 	}
 	limit := q.Limit
 	if limit <= 0 {

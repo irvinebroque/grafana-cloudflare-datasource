@@ -41,7 +41,7 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 		req.Header.Set("Authorization", "Bearer "+c.token)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "grafana-cloudflare-datasource/0.1.0")
+		req.Header.Set("User-Agent", "grafana-cloudflare-datasource/0.1.1")
 		resp, err := c.http.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("Cloudflare request failed: %w", err)
@@ -56,8 +56,14 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 		}
 		if (resp.StatusCode == 429 || resp.StatusCode == 502 || resp.StatusCode == 503 || resp.StatusCode == 504) && attempt < 2 {
 			delay := time.Duration(attempt+1) * 200 * time.Millisecond
-			if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds > 0 {
+			retryAfter := resp.Header.Get("Retry-After")
+			if seconds, err := strconv.ParseInt(retryAfter, 10, 64); err == nil && seconds >= 0 {
+				if seconds > 2 {
+					return nil, c.apiError(resp, data)
+				}
 				delay = time.Duration(seconds) * time.Second
+			} else if until, err := http.ParseTime(retryAfter); err == nil {
+				delay = time.Until(until)
 				if delay > 2*time.Second {
 					return nil, c.apiError(resp, data)
 				}

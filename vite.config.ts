@@ -1,6 +1,16 @@
 import { defineConfig } from "vite-plus";
+import { execFileSync } from "node:child_process";
 
 export default defineConfig({
+  plugins: [
+    {
+      name: "grafana-systemjs",
+      apply: "build",
+      closeBundle() {
+        execFileSync(process.execPath, ["scripts/finalize-frontend.mjs"], { stdio: "inherit" });
+      },
+    },
+  ],
   build: {
     lib: { entry: "src/module.ts", formats: ["es"], fileName: () => "module.js" },
     sourcemap: true,

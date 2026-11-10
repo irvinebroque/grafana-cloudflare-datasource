@@ -2,6 +2,7 @@ import type { CloudflareQuery } from "./types";
 
 export interface LogAnchor {
   timestamp: number;
+  accountId?: string;
   requestId?: string;
   scriptName?: string;
   containerId?: string;
@@ -24,6 +25,7 @@ export function contextTarget(anchor: LogAnchor, original?: CloudflareQuery): Cl
 
   return {
     ...original,
+    accountId: anchor.accountId || original?.accountId,
     refId: "context",
     queryType: "builder",
     dataset: container ? "logs.containerLogs" : "logs.workersLogs",
@@ -52,7 +54,7 @@ export function contextRange(
 export function volumeTarget(original: CloudflareQuery): CloudflareQuery | undefined {
   if (
     original.hide ||
-    original.queryType !== "builder" ||
+    (original.queryType ?? "builder") !== "builder" ||
     original.format !== "logs" ||
     !["logs.workersLogs", "logs.containerLogs"].includes(original.dataset ?? "")
   )

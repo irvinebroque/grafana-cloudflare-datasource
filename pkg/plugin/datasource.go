@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +66,9 @@ func New(ctx context.Context, settings backend.DataSourceInstanceSettings) (inst
 func (d *Datasource) Dispose() { d.client.http.CloseIdleConnections() }
 
 func (d *Datasource) scope(q Query) (string, string, error) {
+	if q.Scope != "" && q.Scope != "account" && q.Scope != "zone" {
+		return "", "", fmt.Errorf("scope must be account or zone")
+	}
 	account := q.AccountID
 	if account == "" {
 		account = d.settings.AccountID
@@ -137,6 +139,9 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusBadRequest, err.Error())
 	}
+	if q.QueryType != "builder" && q.QueryType != "" {
+		q.Dataset = ""
+	}
 	q.AccountID = account
 	q.ZoneID = zone
 	var result SQLResult
@@ -170,7 +175,15 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 			name = pc.DataSourceInstanceSettings.Name
 		}
 		for _, frame := range frames {
-			frame.Meta.Custom = map[string]any{"logsVolumeType": "FullRange", "absoluteRange": map[string]int64{"from": dq.TimeRange.From.UnixMilli(), "to": dq.TimeRange.To.UnixMilli()}, "datasourceName": name, "sourceQuery": q.VolumeSource}
+			kind := "FullRange"
+			if len(frame.Meta.Notices) > 0 {
+				kind = "Limited"
+			}
+			custom := frame.Meta.Custom.(map[string]any)
+			custom["logsVolumeType"] = kind
+			custom["absoluteRange"] = map[string]int64{"from": dq.TimeRange.From.UnixMilli(), "to": dq.TimeRange.To.UnixMilli()}
+			custom["datasourceName"] = name
+			custom["sourceQuery"] = q.VolumeSource
 			if len(frame.Fields) > 1 {
 				frame.Name = frame.Fields[1].Labels["level"]
 			}
@@ -229,7 +242,16 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 	if !tagPattern.MatchString(d.settings.AccountID) {
 		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: "Configure a default account ID to test the SQL API"}, nil
 	}
-	_, err := d.client.request(ctx, http.MethodGet, "/analytics/sql/introspection?account_tag="+d.settings.AccountID, nil)
+	body, err := d.client.request(ctx, http.MethodGet, "/analytics/sql/introspection?account_tag="+d.settings.AccountID, nil)
+	if err == nil {
+		var catalog struct {
+			Datasets []json.RawMessage `json:"datasets"`
+		}
+		err = decodeJSON(body, &catalog)
+		if err == nil && catalog.Datasets == nil {
+			err = fmt.Errorf("Cloudflare returned no SQL dataset catalog")
+		}
+	}
 	if err != nil {
 		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error()}, nil
 	}
@@ -314,11 +336,9 @@ func sendResourceError(sender backend.CallResourceResponseSender, status int, me
 	return sender.Send(&backend.CallResourceResponse{Status: status, Body: body})
 }
 
-var readOnlyGraphQL = regexp.MustCompile(`(?s)^\s*(query\b|\{)`)
-
 func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQuery, account, zone string) (SQLResult, string, error) {
-	if !readOnlyGraphQL.MatchString(q.GraphQL) {
-		return SQLResult{}, q.GraphQL, fmt.Errorf("enter a GraphQL query operation")
+	if err := validateGraphQL(q.GraphQL, q.OperationName); err != nil {
+		return SQLResult{}, q.GraphQL, err
 	}
 	variables, err := decodeParams(q.Variables)
 	if err != nil {
@@ -328,7 +348,11 @@ func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQ
 	variables["zoneTag"] = zone
 	variables["from"] = dq.TimeRange.From.UTC().Format(time.RFC3339)
 	variables["to"] = dq.TimeRange.To.UTC().Format(time.RFC3339)
-	body, err := d.client.request(ctx, http.MethodPost, "/graphql", map[string]any{"query": q.GraphQL, "variables": variables})
+	payload := map[string]any{"query": q.GraphQL, "variables": variables}
+	if q.OperationName != "" {
+		payload["operationName"] = q.OperationName
+	}
+	body, err := d.client.request(ctx, http.MethodPost, "/graphql", payload)
 	if err != nil {
 		return SQLResult{}, q.GraphQL, err
 	}
@@ -355,7 +379,11 @@ func (d *Datasource) analyticsQuery(ctx context.Context, q Query, dq backend.Dat
 	if account == "" {
 		return SQLResult{}, "", fmt.Errorf("Analytics Engine requires an account ID")
 	}
-	sql := expandMacros(q.SQL, dq, account, zone)
+	source := q.AnalyticsSQL
+	if source == "" {
+		source = q.SQL
+	}
+	sql := expandSQLMacros(source, dq, account, zone, true)
 	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "SELECT ") && !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "SELECT\n") {
 		return SQLResult{}, sql, fmt.Errorf("Analytics Engine requires a SELECT query")
 	}
