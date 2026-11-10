@@ -130,7 +130,7 @@ describe("log context", () => {
   });
   it("keeps the source account and scopes context to an invocation", () => {
     const target = contextTarget(
-      { timestamp: 10000, requestId: "request", scriptName: "worker" },
+      { requestId: "request", scriptName: "worker" },
       {
         refId: "A",
         accountId: "account",
@@ -142,22 +142,19 @@ describe("log context", () => {
     expect(target.filters).toEqual([{ field: "requestId", operator: "=", value: "request" }]);
     expect(target.format).toBe("logs");
     expect(
-      contextTarget(
-        { timestamp: 10000, accountId: "resolved" },
-        { refId: "A", accountId: "$account" },
-      ).accountId,
+      contextTarget({ accountId: "resolved" }, { refId: "A", accountId: "$account" }).accountId,
     ).toBe("resolved");
   });
 
   it("falls back to the worker and excludes the anchor during directional pagination", () => {
-    expect(contextTarget({ timestamp: 10000, scriptName: "worker" }).filters).toEqual([
+    expect(contextTarget({ scriptName: "worker" }).filters).toEqual([
       { field: "scriptName", operator: "=", value: "worker" },
     ]);
-    expect(contextRange({ timestamp: 10000 }, 5000, "FORWARD")).toEqual({
+    expect(contextRange(10000, 5000, "FORWARD")).toEqual({
       from: 10001,
       to: 15000,
     });
-    expect(contextRange({ timestamp: 10000 }, 5000, "BACKWARD")).toEqual({
+    expect(contextRange(10000, 5000, "BACKWARD")).toEqual({
       from: 5000,
       to: 9999,
     });
@@ -165,7 +162,7 @@ describe("log context", () => {
 
   it("keeps container context in its source dataset and scopes it to the container", () => {
     const target = contextTarget(
-      { timestamp: 10000, containerId: "container", requestId: "unrelated" },
+      { containerId: "container", requestId: "unrelated" },
       { refId: "A", dataset: "logs.containerLogs", scope: "zone" },
     );
 

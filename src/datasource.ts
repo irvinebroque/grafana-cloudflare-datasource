@@ -79,10 +79,14 @@ export class DataSource
     _options?: LogRowContextOptions,
     original?: CloudflareQuery,
   ): Promise<CloudflareQuery | null> {
-    const request = row.dataFrame.fields.find((field) => field.name === "requestId");
-    const script = row.dataFrame.fields.find((field) => field.name === "scriptName");
-    const container = row.dataFrame.fields.find((field) => field.name === "containerId");
-    const placement = row.dataFrame.fields.find((field) => field.name === "placementId");
+    const fields = row.dataFrame.fields;
+
+    const value = (name: string) =>
+      z
+        .string()
+        .optional()
+        .catch(undefined)
+        .parse(fields.find((field) => field.name === name)?.values[row.rowIndex]);
 
     const metadata = z
       .object({ accountId: z.string().optional(), dataset: z.string().optional() })
@@ -91,23 +95,24 @@ export class DataSource
     const dataset =
       metadata.dataset ||
       ((original?.queryType ?? "builder") === "builder" ? original?.dataset : undefined) ||
-      (container ? "logs.containerLogs" : script ? "logs.workersLogs" : "");
+      (fields.some((field) => field.name === "containerId")
+        ? "logs.containerLogs"
+        : fields.some((field) => field.name === "scriptName")
+          ? "logs.workersLogs"
+          : "");
 
     if (!["logs.workersLogs", "logs.containerLogs"].includes(dataset)) return null;
 
     return contextTarget(
       {
-        timestamp: row.timeEpochMs,
         accountId: metadata.accountId,
-        requestId: z.string().optional().catch(undefined).parse(request?.values[row.rowIndex]),
-        scriptName: z.string().optional().catch(undefined).parse(script?.values[row.rowIndex]),
-        containerId: z.string().optional().catch(undefined).parse(container?.values[row.rowIndex]),
-        placementId: z.string().optional().catch(undefined).parse(placement?.values[row.rowIndex]),
+        requestId: value("requestId"),
+        scriptName: value("scriptName"),
+        containerId: value("containerId"),
+        placementId: value("placementId"),
       },
       {
         ...original,
-        refId: "context",
-        accountId: original?.accountId || metadata.accountId,
         dataset,
       },
     );
@@ -124,7 +129,7 @@ export class DataSource
       throw new Error("Log context is supported for Workers and Containers log datasets.");
 
     const bounds = contextRange(
-      { timestamp: row.timeEpochMs },
+      row.timeEpochMs,
       options?.timeWindowMs ?? 60000,
       options?.direction,
     );

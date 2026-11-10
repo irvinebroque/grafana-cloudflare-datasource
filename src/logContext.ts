@@ -1,7 +1,6 @@
 import { defaultQuery, type CloudflareQuery } from "./types";
 
 export interface LogAnchor {
-  timestamp: number;
   accountId?: string;
   requestId?: string;
   scriptName?: string;
@@ -9,7 +8,10 @@ export interface LogAnchor {
   placementId?: string;
 }
 
-export function contextTarget(anchor: LogAnchor, original?: CloudflareQuery): CloudflareQuery {
+export function contextTarget(
+  anchor: LogAnchor,
+  original?: Partial<CloudflareQuery>,
+): CloudflareQuery {
   const filters = [];
 
   const container = original?.dataset === "logs.containerLogs";
@@ -38,13 +40,13 @@ export function contextTarget(anchor: LogAnchor, original?: CloudflareQuery): Cl
 }
 
 export function contextRange(
-  anchor: LogAnchor,
+  timestamp: number,
   windowMs: number,
   direction?: "FORWARD" | "BACKWARD",
 ) {
   return {
-    from: direction === "FORWARD" ? anchor.timestamp + 1 : anchor.timestamp - windowMs,
-    to: direction === "BACKWARD" ? anchor.timestamp - 1 : anchor.timestamp + windowMs,
+    from: direction === "FORWARD" ? timestamp + 1 : timestamp - windowMs,
+    to: direction === "BACKWARD" ? timestamp - 1 : timestamp + windowMs,
   };
 }
 
