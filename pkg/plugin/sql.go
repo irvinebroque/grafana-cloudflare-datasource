@@ -233,17 +233,3 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 	sql += fmt.Sprintf(" LIMIT %d", q.rowLimit(maxRows))
 	return sql, params, nil
 }
-
-func decodeParams(source string) (map[string]any, error) {
-	params := make(map[string]any)
-	if strings.TrimSpace(source) == "" {
-		return params, nil
-	}
-	if err := decodeJSON([]byte(source), &params); err != nil {
-		return nil, fmt.Errorf("parameters must be a JSON object: %w", err)
-	}
-	if params == nil {
-		return nil, fmt.Errorf("parameters must be a JSON object, not null")
-	}
-	return params, nil
-}

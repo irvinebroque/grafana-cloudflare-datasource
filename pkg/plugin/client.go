@@ -33,7 +33,7 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 			return nil, fmt.Errorf("encode Cloudflare request: %w", err)
 		}
 	}
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(payload))
 		if err != nil {
 			return nil, err
@@ -89,7 +89,6 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 		}
 		return data, nil
 	}
-	return nil, fmt.Errorf("Cloudflare retry limit reached")
 }
 
 func (c *client) apiError(resp *http.Response, body []byte) error {

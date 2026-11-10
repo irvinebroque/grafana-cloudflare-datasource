@@ -100,12 +100,16 @@ func TestNullableColumnTypesAndConfiguredTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frame := tableFrame(result.Data, Query{Format: "table"}, "A", result)
+	frames, err := resultFrames(result, Query{Format: "table"}, "A", "", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := frames[0]
 	if frame.Fields[0].Type() != data.FieldTypeNullableTime || frame.Fields[1].Type() != data.FieldTypeNullableFloat64 {
 		t.Errorf("nullable schema lost: %v, %v", frame.Fields[0].Type(), frame.Fields[1].Type())
 	}
 	custom, _ := decodeSQL([]byte(`{"data":[{"time":"wrong column","actual":"2026-11-10 09:00:00","value":3}]}`))
-	if _, err := seriesFrames(custom.Data, Query{QueryType: "sql", TimeField: "actual"}, "A", custom); err != nil {
+	if _, err := resultFrames(custom, Query{QueryType: "sql", TimeField: "actual"}, "A", "", "", 100); err != nil {
 		t.Errorf("configured time ignored: %v", err)
 	}
 }

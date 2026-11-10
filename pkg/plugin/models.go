@@ -59,12 +59,14 @@ type Filter struct {
 }
 
 type SQLResult struct {
-	Data []map[string]any `json:"data"`
-	Meta []struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
-	} `json:"meta"`
-	Statistics json.RawMessage `json:"statistics"`
+	Data       []map[string]any `json:"data"`
+	Meta       []resultColumn   `json:"meta"`
+	Statistics json.RawMessage  `json:"statistics"`
+}
+
+type resultColumn struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 type cacheEntry struct {

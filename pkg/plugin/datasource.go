@@ -174,22 +174,6 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	return backend.DataResponse{Frames: frames}
 }
 
-func decodeSQL(body []byte) (SQLResult, error) {
-	var result SQLResult
-	if err := decodeJSON(body, &result); err != nil {
-		return result, fmt.Errorf("expected Cloudflare JSON query output (use FORMAT JSON): %w", err)
-	}
-	if result.Data == nil {
-		return result, fmt.Errorf("Cloudflare returned no data array")
-	}
-	for _, row := range result.Data {
-		if row == nil {
-			return result, fmt.Errorf("Cloudflare returned a null row instead of an object")
-		}
-	}
-	return result, nil
-}
-
 func (d *Datasource) sqlQuery(ctx context.Context, q Query, dq backend.DataQuery) (SQLResult, string, error) {
 	var sql string
 	var params map[string]any
@@ -407,61 +391,4 @@ func (d *Datasource) telemetryQuery(ctx context.Context, q Query, dq backend.Dat
 		}
 	}
 	return SQLResult{Data: rows}, q.Telemetry, err
-}
-
-func selectRows(value any, path string) ([]map[string]any, error) {
-	segments := []string{}
-	if path != "" {
-		segments = strings.Split(path, ".")
-	}
-	var walk func(any, []string) ([]map[string]any, error)
-	walk = func(current any, remaining []string) ([]map[string]any, error) {
-		if array, ok := current.([]any); ok {
-			rows := []map[string]any{}
-			for _, child := range array {
-				found, err := walk(child, remaining)
-				if err != nil {
-					return nil, err
-				}
-				rows = append(rows, found...)
-			}
-			return rows, nil
-		}
-		if len(remaining) > 0 {
-			object, ok := current.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("data path %q does not select objects", path)
-			}
-			child, ok := object[remaining[0]]
-			if !ok {
-				return nil, fmt.Errorf("data path %q: field %q was not returned", path, remaining[0])
-			}
-			return walk(child, remaining[1:])
-		}
-		object, ok := current.(map[string]any)
-		if !ok {
-			if current == nil {
-				return []map[string]any{}, nil
-			}
-			return nil, fmt.Errorf("data path %q must select an object or array", path)
-		}
-		row := map[string]any{}
-		flattenRow("", object, row)
-		return []map[string]any{row}, nil
-	}
-	return walk(value, segments)
-}
-
-func flattenRow(prefix string, object map[string]any, row map[string]any) {
-	for key, value := range object {
-		name := key
-		if prefix != "" {
-			name = prefix + "." + key
-		}
-		if child, ok := value.(map[string]any); ok && key != "attributes" {
-			flattenRow(name, child, row)
-		} else {
-			row[name] = value
-		}
-	}
 }

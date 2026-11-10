@@ -187,6 +187,18 @@ func TestClientRetriesAndRedactsErrors(t *testing.T) {
 	if _, err := d.client.request(context.Background(), http.MethodPost, "/analytics/sql", map[string]string{"query": "SELECT"}); err != nil || calls.Load() != 2 {
 		t.Fatalf("%v %d", err, calls.Load())
 	}
+	calls.Store(0)
+	d = testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, "permanent failure")
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := d.client.request(ctx, http.MethodGet, "/x", nil); err == nil || calls.Load() != 3 || !strings.Contains(err.Error(), "permanent failure") {
+		t.Fatalf("retry limit lost the upstream error: %v (%d calls)", err, calls.Load())
+	}
 	d = testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(403)
 		fmt.Fprint(w, "private-token permission denied")

@@ -103,39 +103,50 @@ func numericType(hint string) bool {
 	return strings.HasPrefix(hint, "UInt") || strings.HasPrefix(hint, "Int") || strings.HasPrefix(hint, "Float") || strings.HasPrefix(hint, "Decimal")
 }
 
+func numericColumn(rows []map[string]any, column resultColumn) bool {
+	if numericType(column.Type) {
+		return true
+	}
+	for _, row := range rows {
+		if value := row[column.Name]; value != nil {
+			switch value.(type) {
+			case json.Number, float64:
+				return true
+			}
+			return false
+		}
+	}
+	return false
+}
+
 func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRows int) (data.Frames, error) {
 	rows := result.Data
 	truncated := len(rows) > maxRows
 	if truncated {
 		rows = rows[:maxRows]
 	}
-	keys := columnKeys(rows, result)
-	if len(keys) > maxFrameFields {
+	columns, err := resultColumns(rows, result)
+	if err != nil {
+		return nil, err
+	}
+	if len(columns) > maxFrameFields {
 		return nil, fmt.Errorf("query returned too many columns (limit %d); select fewer fields", maxFrameFields)
 	}
-	if len(rows) > 0 && len(keys) > maxFrameCells/len(rows) {
+	if len(rows) > 0 && len(columns) > maxFrameCells/len(rows) {
 		return nil, fmt.Errorf("query exceeds the %d frame cell limit; reduce columns or rows", maxFrameCells)
 	}
-	seen := map[string]bool{}
-	for _, column := range result.Meta {
-		if seen[column.Name] {
-			return nil, fmt.Errorf("result contains duplicate column %q; use unique aliases", column.Name)
-		}
-		seen[column.Name] = true
-	}
 	var frames data.Frames
-	var err error
 	switch q.Format {
 	case "traces":
 		if (q.QueryType == "builder" || q.QueryType == "") && q.TraceID == "" {
-			frames = data.Frames{tableFrame(rows, q, refID, result)}
+			frames = data.Frames{tableFrame(rows, q, refID, columns)}
 		} else {
 			frames, err = traceFrames(rows, refID)
 		}
 	case "timeseries", "":
-		frames, err = seriesFrames(rows, q, refID, result)
+		frames, err = seriesFrames(rows, q, refID, columns)
 	default:
-		frames = data.Frames{tableFrame(rows, q, refID, result)}
+		frames = data.Frames{tableFrame(rows, q, refID, columns)}
 	}
 	if err != nil {
 		return nil, err
@@ -169,44 +180,23 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 	return frames, nil
 }
 
-func tableFrame(rows []map[string]any, q Query, refID string, result SQLResult) *data.Frame {
-	keys := columnKeys(rows, result)
-	if len(keys) == 0 && q.Format == "logs" {
-		keys = []string{"timestamp", "message", "level"}
+func tableFrame(rows []map[string]any, q Query, refID string, columns []resultColumn) *data.Frame {
+	if len(columns) == 0 && q.Format == "logs" {
+		columns = []resultColumn{{Name: "timestamp"}, {Name: "message"}, {Name: "level"}}
 	}
 	if q.Format == "logs" {
-		ordered := []string{}
-		for _, key := range []string{q.TimeField, "timestamp", "time", "message", "line", "level"} {
-			for _, name := range keys {
-				if name == key && (len(ordered) == 0 || ordered[0] != name) {
-					ordered = append(ordered, name)
-				}
-			}
+		priority := map[string]int{"timestamp": 5, "time": 4, "message": 3, "line": 2, "level": 1}
+		if q.TimeField != "" {
+			priority[q.TimeField] = 6
 		}
-		for _, name := range keys {
-			found := false
-			for _, key := range ordered {
-				if key == name {
-					found = true
-				}
-			}
-			if !found {
-				ordered = append(ordered, name)
-			}
-		}
-		keys = ordered
+		sort.SliceStable(columns, func(i, j int) bool { return priority[columns[i].Name] > priority[columns[j].Name] })
 	}
 	frame := data.NewFrame(refID)
 	frame.RefID = refID
 	frame.Meta = &data.FrameMeta{PreferredVisualization: data.VisTypeTable}
-	for _, key := range keys {
-		hint := ""
-		for _, meta := range result.Meta {
-			if meta.Name == key {
-				hint = meta.Type
-			}
-		}
-		if isTimeField(key, hint, q.TimeField) {
+	for _, column := range columns {
+		key := column.Name
+		if isTimeField(key, column.Type, q.TimeField) {
 			values := make([]*time.Time, len(rows))
 			for i, row := range rows {
 				values[i], _ = timestamp(row[key])
@@ -214,17 +204,7 @@ func tableFrame(rows []map[string]any, q Query, refID string, result SQLResult) 
 			frame.Fields = append(frame.Fields, data.NewField(key, nil, values))
 			continue
 		}
-		numeric := numericType(hint)
-		for _, row := range rows {
-			if v := row[key]; v != nil {
-				switch v.(type) {
-				case json.Number, float64:
-					numeric = true
-				}
-				break
-			}
-		}
-		if numeric {
+		if numericColumn(rows, column) {
 			values := make([]*float64, len(rows))
 			for i, row := range rows {
 				values[i], _ = number(row[key])
@@ -232,7 +212,7 @@ func tableFrame(rows []map[string]any, q Query, refID string, result SQLResult) 
 			frame.Fields = append(frame.Fields, data.NewField(key, nil, values))
 			continue
 		}
-		boolean := columnType(hint) == "Bool"
+		boolean := columnType(column.Type) == "Bool"
 		for _, row := range rows {
 			if row[key] != nil {
 				_, boolean = row[key].(bool)
@@ -261,11 +241,13 @@ func tableFrame(rows []map[string]any, q Query, refID string, result SQLResult) 
 	return frame
 }
 
-func columnKeys(rows []map[string]any, result SQLResult) []string {
-	keys := []string{}
+func resultColumns(rows []map[string]any, result SQLResult) ([]resultColumn, error) {
+	columns := append([]resultColumn{}, result.Meta...)
 	seen := map[string]bool{}
 	for _, meta := range result.Meta {
-		keys = append(keys, meta.Name)
+		if seen[meta.Name] {
+			return nil, fmt.Errorf("result contains duplicate column %q; use unique aliases", meta.Name)
+		}
 		seen[meta.Name] = true
 	}
 	var additional []string
@@ -278,17 +260,19 @@ func columnKeys(rows []map[string]any, result SQLResult) []string {
 		}
 	}
 	sort.Strings(additional)
-	return append(keys, additional...)
+	for _, name := range additional {
+		columns = append(columns, resultColumn{Name: name})
+	}
+	return columns, nil
 }
 
-func seriesFrames(rows []map[string]any, q Query, refID string, result SQLResult) (data.Frames, error) {
+func seriesFrames(rows []map[string]any, q Query, refID string, columns []resultColumn) (data.Frames, error) {
 	if len(rows) == 0 {
 		frame := data.NewFrame(refID, data.NewField("time", nil, []time.Time{}), data.NewField("value", nil, []float64{}))
 		frame.RefID = refID
 		frame.Meta = &data.FrameMeta{Type: data.FrameTypeTimeSeriesMulti}
 		return data.Frames{frame}, nil
 	}
-	keys := columnKeys(rows, result)
 	timeKey := q.TimeField
 	if q.QueryType == "builder" || q.QueryType == "" || timeKey == "" {
 		if _, ok := rows[0]["time"]; ok {
@@ -311,30 +295,17 @@ func seriesFrames(rows []map[string]any, q Query, refID string, result SQLResult
 		dimensions[name] = true
 	}
 	metricNames := []string{}
-	for _, key := range keys {
+	metrics := map[string]Metric{}
+	for _, metric := range q.Metrics {
+		metrics[metric.Alias] = metric
+	}
+	for _, column := range columns {
+		key := column.Name
 		if key == timeKey {
 			continue
 		}
-		numeric := false
-		for _, meta := range result.Meta {
-			if meta.Name == key {
-				numeric = numericType(meta.Type)
-			}
-		}
-		for _, metric := range q.Metrics {
-			if metric.Alias == key {
-				numeric = true
-			}
-		}
-		for _, row := range rows {
-			if row[key] != nil {
-				switch row[key].(type) {
-				case json.Number, float64:
-					numeric = true
-				}
-				break
-			}
-		}
+		_, numeric := metrics[key]
+		numeric = numeric || numericColumn(rows, column)
 		if numeric && !dimensions[key] && !strings.HasPrefix(key, "dimensions.") {
 			metricNames = append(metricNames, key)
 		} else {
@@ -403,21 +374,17 @@ func seriesFrames(rows []map[string]any, q Query, refID string, result SQLResult
 		frame := data.NewFrame(s.metric, data.NewField("time", nil, times), data.NewField(s.metric, s.labels, values))
 		frame.RefID = refID
 		frame.Meta = &data.FrameMeta{Type: data.FrameTypeTimeSeriesMulti, PreferredVisualization: data.VisTypeGraph}
-		for _, metric := range q.Metrics {
-			if metric.Alias == s.metric {
-				unit := ""
-				switch {
-				case strings.HasSuffix(metric.Field, "Us"):
-					unit = "µs"
-				case strings.HasSuffix(metric.Field, "Ms"):
-					unit = "ms"
-				case strings.HasSuffix(metric.Field, "Bytes"):
-					unit = "bytes"
-				}
-				if unit != "" {
-					frame.Fields[1].Config = &data.FieldConfig{Unit: unit}
-				}
-			}
+		unit := ""
+		switch field := metrics[s.metric].Field; {
+		case strings.HasSuffix(field, "Us"):
+			unit = "µs"
+		case strings.HasSuffix(field, "Ms"):
+			unit = "ms"
+		case strings.HasSuffix(field, "Bytes"):
+			unit = "bytes"
+		}
+		if unit != "" {
+			frame.Fields[1].Config = &data.FieldConfig{Unit: unit}
 		}
 		frames = append(frames, frame)
 	}
