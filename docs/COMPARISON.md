@@ -6,7 +6,7 @@ Reviewed against their default branches on 10 November 2026:
 - [CloudWatch at 6be2cdb](https://github.com/grafana/grafana-cloudwatch-datasource/tree/6be2cdbc59df9877b46d349fe3538d775cdb0864)
 - [Elasticsearch at faa2b68](https://github.com/grafana/grafana-elasticsearch-datasource/tree/faa2b68e03d25e993bf5ba4a9e5b558982475b86)
 
-The useful common pattern is to integrate with Grafana's existing query and Explore interfaces, and derive choices from provider metadata. This follow-up adds those conveniences without adding datasource settings or runtime dependencies.
+The useful common pattern is to integrate with Grafana's existing query and Explore interfaces, and derive choices from provider metadata. Version 0.1.2 adds those conveniences without adding datasource settings or runtime dependencies.
 
 | Capability                          | Reference implementation                                                                                                                                                                                                                              | Cloudflare result                                                                                                                                                                                                                                                                    |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -28,6 +28,7 @@ For Explore, it already supplies log context and directional pagination, full-ra
 - Cloudflare's account/zone model does not need AWS region, IAM role, or Google project configuration. Those provider-specific controls would add friction here.
 - Global ad hoc filters can refer to fields absent from other Cloudflare datasets. Filtering remains attached to an individual query.
 - Raw SQL, GraphQL, and telemetry requests are not rewritten by log-detail filter actions. Their result fields do not advertise that capability.
+- Values selected from log details are literal, including `$variable` text. Editing that value in the builder restores normal dashboard-variable interpolation.
 - SQL completion uses catalog metadata and a small source-name scan. It is a typing aid, not a second SQL parser or query execution engine. Complex subqueries and aliases can require manual column entry.
 - Builder-to-SQL conversion would need to preserve parameter values and the exact backend dialect. The Query Inspector already exposes executed SQL; this follow-up avoids duplicating the builder in TypeScript.
 - Query and response fixtures cover upstream failures and edge cases; live tests cover available account data. Neither establishes feature parity with every service supported by the three reference plugins.

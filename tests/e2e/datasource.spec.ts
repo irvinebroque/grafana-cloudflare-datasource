@@ -9,6 +9,8 @@ const resultSchema = z.object({
     z.string(),
     z.object({
       error: z.string().optional(),
+      status: z.number().optional(),
+      errorSource: z.string().optional(),
       frames: z
         .array(
           z.object({
@@ -217,9 +219,10 @@ test("edits raw SQL and recovers after an upstream validation error", async ({ p
   await editCode(sql, "SELECT missingColumn FROM events.workersInvocations LIMIT 1");
   const failed = mainQuery(page);
   await page.getByRole("button", { name: "Run Cloudflare query" }).click();
-  expect(resultSchema.parse(await (await failed).json()).results.A?.error).toContain(
-    "Cloudflare API HTTP 422",
-  );
+  const failure = resultSchema.parse(await (await failed).json()).results.A;
+  expect(failure?.error).toContain("Cloudflare API HTTP 422");
+  expect(failure?.status).toBe(422);
+  expect(failure?.errorSource).toBe("downstream");
   await editCode(
     sql,
     "SELECT $__timeGroup(timestamp) AS time, COUNT(*) AS requests FROM events.workersInvocations GROUP BY time ORDER BY time LIMIT 1000",
