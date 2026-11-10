@@ -137,6 +137,7 @@ Open [localhost:3100](http://localhost:3100) and sign in with `admin` / `admin` 
 - Sampling can affect metrics and leave gaps in logs or traces.
 - A row-limit warning means results may be incomplete; narrow the time range or increase the limit.
 - See [validation and known limitations](docs/VALIDATION.md).
+- See [platform coverage and remaining gaps](docs/COVERAGE.md). The SQL dataset validation count is not a percentage of Cloudflare platform coverage.
 - See the [0.1.1 bug audit](docs/AUDIT.md) for fixes and dependency findings.
 - See the [comparison with Grafana's cloud datasources](docs/COMPARISON.md) for the design decisions behind the editor and Explore integrations.
 
