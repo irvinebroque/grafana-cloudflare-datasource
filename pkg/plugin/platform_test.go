@@ -141,6 +141,10 @@ func TestGraphFilterValidationAndBucketSelection(t *testing.T) {
 	if graphTimeField(dataset, 5*time.Minute) != "dimensions.datetimeHour" {
 		t.Fatal("bucket ignored panel interval")
 	}
+	dataset.Fields = append(dataset.Fields, graphColumn{Name: "datetime", Type: "Time!"})
+	if graphTimeField(dataset, 0) != "datetime" {
+		t.Fatal("event timestamp was replaced by an aggregate bucket")
+	}
 }
 
 func TestOtherProductLogsUseTheirCatalogAndNativeMessage(t *testing.T) {
@@ -184,5 +188,49 @@ func TestOtherProductLogsUseTheirCatalogAndNativeMessage(t *testing.T) {
 	mapped := logRows([]map[string]any{row})
 	if mapped[0]["message"] != "allow" || row["message"] != nil || mapped[0]["resource"] != "example" {
 		t.Fatal("message mapping mutated or discarded structured fields")
+	}
+}
+
+func TestGraphRawEventsDefaultToNativeLogsInsteadOfNumericIDs(t *testing.T) {
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if strings.Contains(body.Query, "settings{") {
+			fmt.Fprint(w, `{"data":{"viewer":{"accounts":[{"settings":{"rawEvents":{"enabled":true,"availableFields":["datetime","clientAsn","action"],"maxDuration":3600,"maxPageSize":10}}}]}}}`)
+			return
+		}
+		if !strings.Contains(body.Query, "{datetime clientAsn action}") {
+			t.Error(body.Query)
+		}
+		fmt.Fprint(w, `{"data":{"viewer":{"accounts":[{"rawEvents":[{"datetime":"2026-11-10T09:00:00Z","clientAsn":12345,"action":"allow"}]}]}}}`)
+	})
+	types := graphFixture()
+	node := types[3].Fields[0]
+	node.Name = "rawEvents"
+	node.Type.Name = "RawEvent"
+	types[3].Fields = []graphField{node}
+	types = append(types, graphType{Name: "RawEvent", Kind: "OBJECT", Fields: []graphField{
+		{Name: "datetime", Type: graphRef{Kind: "SCALAR", Name: "Time"}},
+		{Name: "clientAsn", Type: graphRef{Kind: "SCALAR", Name: "UInt64"}},
+		{Name: "action", Type: graphRef{Kind: "SCALAR", Name: "String"}},
+	}})
+	body, _ := json.Marshal(map[string]any{"__schema": map[string]any{"types": types}})
+	d.cacheBody("graphql-schema", body)
+	q := Query{QueryType: "graphql-builder", Dataset: "rawEvents", Format: "logs"}
+	result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
+	if result.Error != nil || len(result.Frames) != 1 {
+		t.Fatalf("%+v", result)
+	}
+	frame := result.Frames[0]
+	if frame.Meta.PreferredVisualization != data.VisTypeLogs || frame.Fields[0].Name != "datetime" || frame.Fields[1].Name != "message" || *frame.Fields[1].At(0).(*string) != "allow" {
+		t.Fatal("raw event did not use the native log contract")
+	}
+	q.Format = "timeseries"
+	if result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q)); result.Error == nil {
+		t.Fatal("raw event ASN was charted as a default metric")
 	}
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Alert, Button, Field, Input, Select } from "@grafana/ui";
 import type { SelectableValue } from "@grafana/data";
+import { graphFormat } from "../queryState";
 import type { DataSource } from "../datasource";
 import type { CloudflareQuery, GraphDataset } from "../types";
 
@@ -81,9 +82,19 @@ export function GraphQLBuilder({ query, datasource, onChange }: Props) {
             value: entry.name,
             description: entry.description,
           }))}
-          onChange={(value) =>
-            onChange({ dataset: value.value, columns: [], groupBy: [], filters: [], timeField: "" })
-          }
+          onChange={(value) => {
+            const found = datasets.find((entry) => entry.name === value.value);
+
+            if (found)
+              onChange({
+                dataset: found.name,
+                format: graphFormat(found),
+                columns: [],
+                groupBy: [],
+                filters: [],
+                timeField: "",
+              });
+          }}
         />
       </Field>
       {dataset?.settings && (

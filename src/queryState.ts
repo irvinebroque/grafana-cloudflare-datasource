@@ -7,6 +7,8 @@ import {
   type CloudflareQuery,
   type QueryType,
   type Dataset,
+  type GraphDataset,
+  type ResultFormat,
   type Metric,
 } from "./types";
 
@@ -88,4 +90,17 @@ export function isNumericType(type: string): boolean {
   return /^(?:(?:Nullable|LowCardinality)\(\s*)*(?:U?Int\d+|Float\d+|Decimal(?:\d+)?(?:\(|$))/.test(
     type,
   );
+}
+
+export function graphFormat(dataset: GraphDataset): ResultFormat {
+  if (!dataset.fields.some((field) => /^(Time|Date)!?$/.test(field.type))) return "table";
+
+  if (
+    dataset.fields.some(
+      (field) => field.name === "count" || /^(sum|avg|min|max|quantiles)\./.test(field.name),
+    )
+  )
+    return "timeseries";
+
+  return "logs";
 }

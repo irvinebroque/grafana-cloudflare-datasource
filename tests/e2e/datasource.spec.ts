@@ -456,5 +456,14 @@ test("renders the simple trace dashboard with Grafana's native viewer", async ({
   await page.goto("/d/cloudflare-traces/cloudflare-traces?from=now-6h&to=now");
   await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("Recent traces", { exact: true })).toBeVisible();
+  const secondTrace = page.getByRole("grid").getByRole("row").nth(2).getByRole("gridcell").first();
+  const traceId = (await secondTrace.innerText()).trim();
+  await secondTrace.click();
+  await page.getByRole("link", { name: "Inspect trace", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`var-traceId=${traceId}`));
+  await expect(
+    page.getByRole("heading", { name: `Trace · ${traceId}`, exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: ".local/native-trace-dashboard.png", fullPage: true });
 });

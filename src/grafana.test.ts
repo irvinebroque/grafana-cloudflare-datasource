@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { interpolateQuery } from "./interpolation";
 import { queryHasFilter, toggleQueryFilter } from "./queryFilters";
 import { queryDisplayText } from "./queryDisplay";
-import { defaultMetric, isNumericType } from "./queryState";
+import { defaultMetric, graphFormat, isNumericType } from "./queryState";
 import { sqlSuggestions } from "./sqlSuggestions";
 import type { CloudflareQuery, Dataset } from "./types";
 
@@ -166,4 +166,38 @@ it("uses readable history summaries and preserves the legacy SQL dialect", () =>
     queryDisplayText({ refId: "A", queryType: "analytics", sql: "old", analyticsSql: "new" }),
   ).toBe("new");
   expect(queryDisplayText({ refId: "A", queryType: "sql", sql: "SELECT 1" })).toBe("SELECT 1");
+});
+
+describe("GraphQL result defaults", () => {
+  it("shows raw events as logs and aggregates as metrics without charting an event's numeric IDs", () => {
+    const fields = [
+      { name: "datetime", type: "Time!", description: "", numeric: false },
+      { name: "clientAsn", type: "uint64!", description: "", numeric: true },
+    ];
+
+    const dataset = {
+      name: "httpRequestsAdaptive",
+      description: "",
+      fields,
+      filters: [],
+      orderBy: [],
+    };
+
+    expect(graphFormat(dataset)).toBe("logs");
+    expect(
+      graphFormat({
+        ...dataset,
+        fields: [{ name: "count", type: "uint64!", description: "", numeric: true }],
+      }),
+    ).toBe("table");
+    expect(
+      graphFormat({
+        ...dataset,
+        fields: [
+          ...fields,
+          { name: "sum.requests", type: "uint64!", description: "", numeric: true },
+        ],
+      }),
+    ).toBe("timeseries");
+  });
 });

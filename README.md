@@ -131,7 +131,7 @@ Set **SQL parameters** to:
 - In Worker log details, click **View trace**. In a span’s details, click **Related Worker logs** to return to matching logs.
 - Choose **Cloudflare · distributed trace** to search retained traces, or paste a **Trace ID**.
 - In Explore, expand **Node graph** to inspect span relationships. Use the native waterfall’s attribute/text filters, error and high-latency filters, critical path, and span details.
-- Import **Cloudflare traces** for a two-panel dashboard: recent traces and the selected native trace waterfall. Choose a trace ID or click one in the table.
+- Import **Cloudflare traces** for a two-panel dashboard: recent traces and the selected native trace waterfall. Choose a trace ID, or click one in the table and choose **Inspect trace**.
 
 Tracing uses the shared Cloudflare trace schema across products. It does not depend on Worker-only span names or a root with an empty parent ID. The graph connects retained spans; it is not an aggregate service map. Search reports the largest observed span duration and estimated span count, rather than an exact end-to-end duration.
 

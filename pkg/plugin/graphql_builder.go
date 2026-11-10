@@ -62,6 +62,15 @@ func graphFilterValue(value, declaration string) (any, error) {
 }
 
 func graphTimeField(dataset graphDataset, interval time.Duration) string {
+	if interval <= 0 {
+		for _, name := range []string{"datetime", "timestamp", "dimensions.datetime", "dimensions.timestamp"} {
+			for _, column := range dataset.Fields {
+				if column.Name == name && strings.TrimSuffix(column.Type, "!") == "Time" {
+					return column.Name
+				}
+			}
+		}
+	}
 	// Choose a provider-supported bucket without combining already aggregated quantiles.
 	for _, bucket := range []struct {
 		name  string
@@ -118,7 +127,11 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 		return nil
 	}
 	if q.TimeField == "" {
-		q.TimeField = graphTimeField(dataset, dq.Interval)
+		interval := time.Duration(0)
+		if q.Format == "timeseries" {
+			interval = dq.Interval
+		}
+		q.TimeField = graphTimeField(dataset, interval)
 	}
 	if q.TimeField != "" {
 		typ := strings.TrimSuffix(columns[q.TimeField].Type, "!")
@@ -138,6 +151,13 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 		}
 	}
 	chosen := q.Columns
+	if len(chosen) == 0 && q.Format == "logs" {
+		for _, field := range dataset.Fields {
+			if !strings.Contains(field.Name, ".") {
+				chosen = append(chosen, field.Name)
+			}
+		}
+	}
 	if len(chosen) == 0 {
 		for _, preferred := range []string{"sum.requests", "count", "sum.count"} {
 			if _, ok := columns[preferred]; ok {
@@ -147,7 +167,7 @@ func (d *Datasource) graphBuilderQuery(ctx context.Context, q *Query, dq backend
 		}
 		if len(chosen) == 0 {
 			for _, field := range dataset.Fields {
-				if field.Numeric && !strings.HasPrefix(field.Name, "dimensions.") {
+				if field.Numeric && !strings.HasSuffix(field.Name, ".sampleInterval") && (strings.HasPrefix(field.Name, "sum.") || strings.HasPrefix(field.Name, "avg.") || strings.HasPrefix(field.Name, "min.") || strings.HasPrefix(field.Name, "max.") || strings.HasPrefix(field.Name, "quantiles.")) {
 					chosen = []string{field.Name}
 					break
 				}
