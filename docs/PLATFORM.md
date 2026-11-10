@@ -24,7 +24,7 @@ SQL results use Grafana's native Logs view and preserve the original structured 
 
 DLP request/scan/match metrics are available through Gateway HTTP analytics. Inspect retained Gateway HTTP logs for request-level DLP events and use **DLP · profiles** to identify the configured profiles. Posture-check definitions and CASB findings are available through REST; historical posture, CASB, and DEX events require SQL event datasets exposed by Cloudflare.
 
-Cloudflare controls product entitlements, ingestion, sampling, retention, and field availability. The plugin queries product logs through the SQL API only; it never calls the legacy Log Explorer API. A product absent from the SQL catalog cannot be queried through a legacy fallback. These paths do not retrieve data that was never ingested or has expired. Full-range log volume and invocation context use the SQL paths that support them.
+Cloudflare controls product entitlements, ingestion, sampling, retention, and field availability. The plugin uses the SQL API for discovered product-log datasets; it never calls the legacy Log Explorer API. Explicit GraphQL-event and Workers telemetry queries retain their separate modes. A product absent from the SQL catalog cannot be queried through a legacy fallback. These paths do not retrieve data that was never ingested or has expired. Full-range log volume and invocation context use the SQL paths that support them.
 
 ## Operational state and history
 

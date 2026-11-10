@@ -14,7 +14,7 @@ Across **35 REST operations**, **21 returned real data**, **10 succeeded empty**
 
 The real DEX device endpoint requires an interval even though the published OpenAPI omitted it; `cf schema` and a real API response identified the requirement. Both DEX historical query operations now send the interval. Historical series retain observation times and device/test IDs, without a changing fetch-time label. Current-state certificate queries returned **15 labeled expiry series**, including the days unit, and passed Grafana's server-side reduce evaluator. No recurring alert or notification was created.
 
-All product logs use the SQL API. The plugin contains no legacy Log Explorer API integration or fallback. Dataset-aware timestamps and fields, alternate schemas, absent severity, original structured values, and canonical trace/severity/message mapping have fixture coverage. Modern SQL log paths and native traces continue to use existing real traffic. No resources, synthetic traffic, permissions, or ingestion settings were added.
+Dataset discovery and guided product-log queries use the SQL API; GraphQL events and Workers telemetry retain their explicit query modes. The plugin contains no legacy Log Explorer API integration or fallback. Dataset-aware timestamps and fields, alternate schemas, absent severity, original structured values, and canonical trace/severity/message mapping have fixture coverage. Modern SQL log paths and native traces continue to use existing real traffic. No resources, synthetic traffic, permissions, or ingestion settings were added.
 
 ## Platform analytics and native trace follow-up
 
