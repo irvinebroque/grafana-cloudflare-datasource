@@ -1,45 +1,29 @@
 # Cloudflare data source for Grafana
 
-Query and visualize Cloudflare metrics, logs, traces, and analytics in Grafana.
-
-- **Metrics:** Discover Cloudflare SQL and GraphQL analytics across compute, storage, AI, networking, security, and media.
-- **Logs:** Search catalog-discovered log datasets with native Explore rendering and log volume. Workers and Containers also support surrounding context.
-- **Traces:** Use Grafana’s native waterfall, node graph, span filters, critical path, and links between logs and traces.
-- **Dashboards:** Use variables, annotations, alerts, and the included overview and trace dashboards.
-
-```mermaid
-flowchart LR
-    Grafana[Grafana dashboards and Explore] --> Plugin[Cloudflare data source]
-    Plugin --> SQL[Cloudflare SQL API · beta]
-    Plugin --> APIs[GraphQL, Workers telemetry, Analytics Engine]
-```
+Query Cloudflare metrics, logs, traces, and analytics in Grafana. Includes native Explore views, alerts, and overview and trace dashboards.
 
 ## Requirements
 
 - Grafana **13.3+**.
-- Your Cloudflare account ID and a [Cloudflare API token](#api-token-permissions) with permissions for the query languages, datasets, and resource selectors you use.
+- Your Cloudflare account ID and an [API token](#api-token-permissions).
 - To build: Node.js **24+**, pnpm, and Go **1.27.3+**.
 
 ### API token permissions
 
-[Create an API token](https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&accountId=%2A&zoneId=all&name=Grafana%20Cloudflare) with **Account → Account Analytics → Read** preselected. Restrict the token to the accounts and zones you want to query before creating it.
+[Create an API token](https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&accountId=%2A&zoneId=all&name=Grafana%20Cloudflare) with **Account → Account Analytics → Read**, scoped to the accounts and zones you want to query. Add product permissions as needed; see the [permission reference](docs/PERMISSIONS.md).
 
-Add these permissions only if you want to browse resources:
+Optional browsing permissions:
 
 | Feature         | Additional permission             |
 | --------------- | --------------------------------- |
 | Browse accounts | Account → Account Settings → Read |
 | Browse zones    | Zone → Zone → Read                |
 
-You can enter account and zone IDs directly without these browsing permissions.
-
-Some datasets require additional product permissions. **Save & test** checks SQL catalog access; run an example query to verify access to your data. See the [permission reference](docs/PERMISSIONS.md) for details.
-
-For examples across Cloudflare products, resource discovery, retained logs, and operational queries, see the [product query guide](docs/PLATFORM.md).
+You can also enter account and zone IDs directly.
 
 ## Getting started
 
-### 1. Build the plugin
+### 1. Build
 
 ```sh
 git clone https://github.com/irvinebroque/grafana-cloudflare-datasource.git
@@ -48,106 +32,35 @@ pnpm install --frozen-lockfile
 BUILD_ALL=1 pnpm exec vp run build
 ```
 
-The installable plugin is in `dist/`. The build includes Linux, macOS, and Windows executables.
+### 2. Install
 
-### 2. Install in Grafana
-
-- Copy `dist/` to your Grafana plugins directory as `cloudflare-cloudflare-datasource/`.
-- This plugin is **unsigned**. Add this to your Grafana configuration, then restart Grafana:
+Copy `dist/` to your Grafana plugins directory as `cloudflare-cloudflare-datasource/`. The plugin is **unsigned**; add this to your Grafana configuration and restart Grafana:
 
 ```ini
 [plugins]
 allow_loading_unsigned_plugins = cloudflare-cloudflare-datasource
 ```
 
-### 3. Connect your account
+### 3. Connect
 
-1. Open **Connections → Data sources → Add data source**.
-2. Select **Cloudflare**.
-3. Enter your **API token** and **Default account ID**. Optionally add a default zone ID.
-4. Click **Save & test**.
-5. Open the data source's **Dashboards** tab and import **Cloudflare overview** and **Cloudflare traces**.
-
-Grafana encrypts the saved token. Cloudflare API requests run through the plugin backend.
+1. Open **Connections → Data sources → Add data source** and select **Cloudflare**.
+2. Enter your **API token** and **Default account ID**. Optionally add a default zone ID.
+3. Click **Save & test**.
+4. Import **Cloudflare overview** and **Cloudflare traces** from the data source's **Dashboards** tab.
 
 ## Query your data
 
-### Use the query builder
+Open **Explore**, select Cloudflare, and choose an example from **Start with**. Set a time range and click **Run Cloudflare query**.
 
-1. Open **Explore** and select your Cloudflare data source.
-2. Choose an example from **Start with**, or select a dataset and add metrics and filters.
-3. Choose a time range and click **Run Cloudflare query**.
+- **Metrics:** Choose **SQL** or **GraphQL**, then **Builder** to select datasets, metrics, and filters. Choose **Code** to write queries directly.
+- **Logs:** Select a log dataset to use Grafana's log viewer. Workers and Containers also support surrounding context.
+- **Traces:** Choose **Cloudflare · distributed trace**, or use **View trace** from Worker log details. Inspect spans in Grafana's native waterfall and node graph.
 
-| What you want      | Example                        |
-| ------------------ | ------------------------------ |
-| Requests by Worker | Workers · requests             |
-| CPU time           | Workers · p99 CPU time (µs)    |
-| D1 query latency   | D1 · query latency (ms)        |
-| R2 operations      | R2 · operations                |
-| Worker logs        | Workers · logs                 |
-| Container logs     | Containers · logs              |
-| Trace search       | Cloudflare · distributed trace |
-
-### Discover analytics across Cloudflare
-
-Choose **GraphQL** and **Builder**, then select an account or zone and an **Analytics dataset**. Search the provider’s schema for DNS, DNS Firewall, Containers, Durable Objects, AI Gateway, AI Search, Gateway, firewall events, Load Balancing, Health Checks, and other products.
-
-Select metrics, dimensions, and filters. The editor checks the selected scope’s availability and field permissions, shows query-range and retention limits, and chooses a supported time bucket for Grafana’s panel interval. Filters use typed variables. Provider aggregates and quantiles retain their original semantics.
-
-The catalog excludes deprecated and staging nodes. Availability depends on your account, zone, token, plan, and retained data. For nested Boolean filters, fields with arguments, or other advanced selections, choose **Code** in GraphQL and set its result path. See the [coverage record](docs/COVERAGE.md).
-
-### Write SQL
-
-Select **SQL**, **Code**, and **Time series**. This query charts requests for one Worker:
-
-```sql
-SELECT $__timeGroup(timestamp) AS time,
-       COUNT(*) AS requests
-FROM events.workersInvocations
-WHERE scriptName = $worker
-GROUP BY time
-ORDER BY time
-LIMIT 1000
-```
-
-Set **SQL parameters** to:
-
-```json
-{ "worker": "my-worker" }
-```
-
-- The plugin supplies the account or zone and dashboard time range. Omit those predicates from SQL.
-- `$__timeGroup(timestamp)` groups results using Grafana's query interval.
-- Press **Ctrl+Space** for dataset, column, macro, and dashboard variable suggestions. Press **Shift+Enter** or **Ctrl/Cmd+Enter** to run.
-- Choose **Table** for queries without a time column.
-- See the [Cloudflare SQL reference](https://developers.cloudflare.com/analytics/sql-api/sql-reference/) for supported functions.
-
-### Explore logs and traces
-
-- Select a log dataset to use Grafana’s native log viewer. The builder discovers its timestamp and columns. Events without a `message` use a body/error/event field, or their structured JSON. Original fields remain available in log details; the plugin does not invent log severity.
-- Workers and Containers support surrounding context and volume by level. Other log datasets support total volume without assuming a `level` column.
-- In Worker log details, click **View trace**. In a span’s details, click **Related Worker logs** to return to matching logs.
-- Choose **Cloudflare · distributed trace** to search retained traces, or paste a **Trace ID**.
-- In Explore, expand **Node graph** to inspect span relationships. Use the native waterfall’s attribute/text filters, error and high-latency filters, critical path, and span details.
-- Import **Cloudflare traces** for a two-panel dashboard: recent traces and the selected native trace waterfall. Choose a trace ID, or click one in the table and choose **Inspect trace**.
-
-Tracing uses the shared Cloudflare trace schema across products. It does not depend on Worker-only span names or a root with an empty parent ID. The graph connects retained spans; it is not an aggregate service map. Search reports the largest observed span duration and estimated span count, rather than an exact end-to-end duration.
-
-Cloudflare sampling and retention can leave missing spans. Spans produced outside Cloudflare require exporting participating services to a shared OpenTelemetry backend such as Tempo. Grafana’s Tempo-specific Traces Drilldown needs that backend; the native viewer above works directly with this plugin. See [Cloudflare tracing](https://developers.cloudflare.com/observability/traces/) and [Grafana trace integration](https://grafana.com/docs/grafana/latest/visualizations/explore/trace-integration/).
-
-### Use other Cloudflare APIs
-
-| Query language           | How to use it                                                                                                                                                  |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **GraphQL · Builder**    | Discover analytics datasets, fields, filters, availability, and time buckets for the selected account or zone.                                                 |
-| **GraphQL · Code**       | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries.            |
-| **Resources and audit**  | Query health, certificate expiry, deployments, DEX metrics, CASB findings, and audit/history. Browse resource IDs when needed.                                 |
-| **Workers telemetry**    | Requires [Workers Observability Write](docs/PERMISSIONS.md#workers-telemetry). Paste a Query Builder request; use `events.events` as the result path for logs. |
-| **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.                                                                                    |
+See the [product query guide](docs/PLATFORM.md) for examples across Cloudflare.
 
 ## Run locally with Docker
 
-After building the plugin:
+After building:
 
 ```sh
 export CLOUDFLARE_API_TOKEN='your-token'
@@ -157,19 +70,7 @@ docker compose up
 
 Open [localhost:3100](http://localhost:3100) and sign in with `admin` / `admin` on first use.
 
-## Things to know
-
-- Dataset access depends on your token, Cloudflare plan, and data retention.
-- Sampling can affect metrics and leave gaps in logs or traces.
-- A row-limit warning means results may be incomplete; narrow the time range or increase the limit.
-- See [validation and known limitations](docs/VALIDATION.md).
-- See [platform coverage and remaining gaps](docs/COVERAGE.md). The SQL dataset validation count is not a percentage of Cloudflare platform coverage.
-- See the [0.1.1 bug audit](docs/AUDIT.md) for fixes and dependency findings.
-- See the [comparison with Grafana's cloud datasources](docs/COMPARISON.md) for the design decisions behind the editor and Explore integrations.
-
 ## Development
-
-Uses Vite Plus, strict TypeScript, and [anti-slop](https://github.com/dmmulroy/anti-slop).
 
 ```sh
 pnpm exec vp check --deny-warnings
@@ -177,8 +78,6 @@ pnpm exec vp test run
 go test -race ./...
 pnpm exec vp run build
 ```
-
-Use `pnpm exec vp run dev` for incremental frontend builds. Initial and subsequent builds emit Grafana-compatible SystemJS modules. Rebuild the Go executable and restart Grafana after backend changes.
 
 ## License
 
