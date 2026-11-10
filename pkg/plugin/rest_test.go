@@ -18,7 +18,7 @@ func TestRESTPaginationProjectionAndScope(t *testing.T) {
 	calls := 0
 	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.Method != "GET" || !strings.HasPrefix(r.URL.Path, "/zones/"+strings.Repeat("b", 32)+"/dns_records") {
+		if r.Method != "GET" || !strings.HasPrefix(r.URL.Path, "/zones/"+strings.Repeat("b", 32)+"/healthchecks") {
 			t.Error("incorrect method or scope", r.URL.Path)
 		}
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
@@ -27,11 +27,11 @@ func TestRESTPaginationProjectionAndScope(t *testing.T) {
 		}
 		rows := []map[string]any{}
 		for i := 0; i < 50; i++ {
-			rows = append(rows, map[string]any{"id": fmt.Sprint((page-1)*50 + i), "name": "record", "content": "192.0.2.1", "secret": "must not leave backend"})
+			rows = append(rows, map[string]any{"id": fmt.Sprint((page-1)*50 + i), "name": "check", "status": "healthy", "secret": "must not leave backend"})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"success": true, "result": rows, "result_info": map[string]any{"page": page, "per_page": 50, "total_count": 120, "total_pages": 3}})
 	})
-	q := Query{QueryType: "rest", Operation: "dns-records", ZoneID: strings.Repeat("b", 32), Format: "table", Limit: 75}
+	q := Query{QueryType: "rest", Operation: "health-checks", ZoneID: strings.Repeat("b", 32), Format: "table", Limit: 75}
 	result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
 	if result.Error != nil || calls != 2 {
 		t.Fatalf("%+v calls=%d", result, calls)
@@ -176,5 +176,113 @@ func TestRESTHistoricalSeriesUsesObservationTimeAndStableLabels(t *testing.T) {
 	}
 	if _, ok := f.Fields[1].Labels["snapshotTime"]; ok {
 		t.Fatal("fetch time must not change the identity of a historical series")
+	}
+}
+
+func TestRESTConfigurationAndDiscoveryAreNotPanelQueries(t *testing.T) {
+	d := testDatasource(t, func(http.ResponseWriter, *http.Request) { t.Fatal("configuration query reached Cloudflare") })
+	for _, operation := range []string{
+		"dns-records", "load-balancers", "pool-origins", "rulesets", "rules", "posture-rules", "dlp-profiles", "gateway-rules",
+		"d1", "r2", "kv", "queues", "dns-firewall", "pools", "workers", "pages", "containers", "durable-namespaces", "ai-gateways", "ai-search", "devices",
+	} {
+		q := Query{QueryType: "rest", Operation: operation, ZoneID: strings.Repeat("b", 32), ResourceID: "resource", Format: "table"}
+		result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
+		if result.Error == nil || result.Status != backend.StatusBadRequest {
+			t.Fatalf("accepted non-observability panel query %s", operation)
+		}
+		for _, op := range restCatalog() {
+			if op.Name == operation {
+				t.Fatalf("non-query source %s appeared in editor", operation)
+			}
+		}
+	}
+}
+
+func TestRESTDiscoveryReturnsOnlyNamesAndUsableIDs(t *testing.T) {
+	for _, operation := range []string{"workers", "pages", "containers", "durable-namespaces", "dns-firewall", "pools", "ai-gateways", "ai-search", "devices", "dex-tests"} {
+		t.Run(operation, func(t *testing.T) {
+			d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" {
+					t.Fatal("discovery must be read-only")
+				}
+				row := `{"id":"resource-id","name":"resource-name","expression":"configuration","serial_number":"device-serial","env_vars":{"TOKEN":"secret"}}`
+				if operation == "workers" {
+					row = `{"id":"resource-id","env_vars":{"TOKEN":"secret"}}`
+				}
+				if operation == "dex-tests" {
+					fmt.Fprintf(w, `{"result":{"tests":[%s]}}`, row)
+				} else {
+					fmt.Fprintf(w, `{"result":[%s]}`, row)
+				}
+			})
+			var response *backend.CallResourceResponse
+			sender := backend.CallResourceResponseSenderFunc(func(r *backend.CallResourceResponse) error { response = r; return nil })
+			err := d.CallResource(context.Background(), &backend.CallResourceRequest{Method: "GET", Path: "resources", URL: "/resources?operation=" + operation}, sender)
+			if err != nil || response == nil || response.Status != 200 {
+				t.Fatalf("discovery failed: %v %+v", err, response)
+			}
+			var body struct {
+				Result []map[string]string `json:"result"`
+			}
+			if err := json.Unmarshal(response.Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			wantID, wantName := "resource-id", "resource-name"
+			if operation == "pages" {
+				wantID = wantName
+			}
+			if operation == "workers" {
+				wantName = wantID
+			}
+			if len(body.Result) != 1 || len(body.Result[0]) != 2 || body.Result[0]["id"] != wantID || body.Result[0]["name"] != wantName {
+				t.Fatalf("discovery leaked fields or lost resource identifier: %s", response.Body)
+			}
+		})
+	}
+}
+
+func TestRESTPagesPagination(t *testing.T) {
+	for _, operation := range []string{"pages", "pages-deployments"} {
+		t.Run(operation, func(t *testing.T) {
+			calls := 0
+			d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Query().Get("per_page") != "10" {
+					t.Fatal("Pages rejected page sizes above ten in live validation")
+				}
+				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+				rows := []map[string]any{}
+				for i := (page - 1) * 10; i < min(page*10, 15); i++ {
+					rows = append(rows, map[string]any{"id": fmt.Sprint(i), "name": fmt.Sprint(i), "created_on": "2026-11-10T09:30:00Z"})
+				}
+				json.NewEncoder(w).Encode(map[string]any{"result": rows, "result_info": map[string]any{"total_pages": 2, "total_count": 15}})
+			})
+			if operation == "pages" {
+				var response *backend.CallResourceResponse
+				sender := backend.CallResourceResponseSenderFunc(func(r *backend.CallResourceResponse) error { response = r; return nil })
+				err := d.CallResource(context.Background(), &backend.CallResourceRequest{Method: "GET", Path: "resources", URL: "/resources?operation=pages"}, sender)
+				if err != nil || response == nil || response.Status != 200 {
+					t.Fatalf("Pages discovery failed: %v %+v", err, response)
+				}
+				var body struct {
+					Result []map[string]string `json:"result"`
+				}
+				if err := json.Unmarshal(response.Body, &body); err != nil {
+					t.Fatal(err)
+				}
+				if len(body.Result) != 15 || body.Result[14]["id"] != "14" {
+					t.Fatal("Pages discovery skipped or duplicated resources")
+				}
+			} else {
+				q := Query{QueryType: "rest", Operation: operation, ResourceID: "project", Format: "logs", Limit: 15}
+				result := d.query(context.Background(), backend.PluginContext{}, dataQuery(q))
+				if result.Error != nil || len(result.Frames) != 1 || result.Frames[0].Rows() != 15 {
+					t.Fatalf("Pages history pagination failed: %+v", result)
+				}
+			}
+			if calls != 2 {
+				t.Fatalf("Pages pagination made %d requests, expected two", calls)
+			}
+		})
 	}
 }

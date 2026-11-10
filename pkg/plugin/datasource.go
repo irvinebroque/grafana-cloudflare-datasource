@@ -263,22 +263,22 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 	if route == "resources" {
 		q := Query{QueryType: "rest", Operation: params.Get("operation"), AccountID: account, ZoneID: params.Get("zoneId"), Limit: 1000, Format: "table"}
 		op, cause := findRESTOperation(q.Operation)
-		if cause != nil || op.Resource != "" {
-			return sendResourceError(sender, 400, "select an inventory operation without a parent resource")
+		if cause != nil || (!op.discoveryOnly && op.Name != "dex-tests") {
+			return sendResourceError(sender, 400, "select a supported resource discovery source")
 		}
 		q.Scope = op.Scope
 		q.AccountID, q.ZoneID, cause = d.scope(q)
 		if cause != nil {
 			return sendResourceError(sender, 400, cause.Error())
 		}
-		result, _, cause := d.restQuery(ctx, &q, backend.DataQuery{})
+		result, _, cause := d.fetchREST(ctx, op, &q, backend.DataQuery{})
 		if cause != nil {
 			return sendResourceError(sender, int(queryError(cause).Status), cause.Error())
 		}
 		resources := []map[string]string{}
 		for _, row := range result.Data {
 			id := textValue(row[op.IDField])
-			name := textValue(row[op.NameField])
+			name := textValue(row["name"])
 			if id == "" {
 				continue
 			}

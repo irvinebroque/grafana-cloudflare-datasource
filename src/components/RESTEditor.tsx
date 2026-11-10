@@ -42,7 +42,7 @@ export function RESTEditor({ query, datasource, onChange }: Props) {
         label="Operation"
         description={
           operation
-            ? `Requires ${operation.permission}. Inventory shows current state; history operations use the selected time range.`
+            ? `Requires ${operation.permission}. Current state is observed at query time; history operations use the selected time range.`
             : undefined
         }
       >

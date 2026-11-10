@@ -14,91 +14,85 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-// Only these GET operations are exposed. Projections intentionally omit credentials,
+// Only these GET operations support queries or resource discovery. Projections omit credentials,
 // request/response payloads, origin headers, and deployment environment variables.
 type restOperation struct {
-	Name       string   `json:"name"`
-	Title      string   `json:"title"`
-	Scope      string   `json:"scope"`
-	Resource   string   `json:"resource,omitempty"`
-	Parameters []string `json:"parameters,omitempty"`
-	Columns    []string `json:"columns"`
-	Format     string   `json:"format"`
-	TimeField  string   `json:"timeField,omitempty"`
-	Permission string   `json:"permission"`
-	IDField    string   `json:"-"`
-	NameField  string   `json:"-"`
-	path       string
-	fields     string
-	resultPath string
-	paging     string
-	cursorPath string
-	from       string
-	to         string
-	transform  string
+	Name          string   `json:"name"`
+	Title         string   `json:"title"`
+	Scope         string   `json:"scope"`
+	Resource      string   `json:"resource,omitempty"`
+	Parameters    []string `json:"parameters,omitempty"`
+	Columns       []string `json:"columns"`
+	Format        string   `json:"format"`
+	TimeField     string   `json:"timeField,omitempty"`
+	Permission    string   `json:"permission"`
+	IDField       string   `json:"-"`
+	path          string
+	fields        string
+	resultPath    string
+	paging        string
+	cursorPath    string
+	from          string
+	to            string
+	transform     string
+	discoveryOnly bool
 }
 
 var restOperations = []restOperation{
-	{Name: "dns-records", Title: "DNS · records", Scope: "zone", path: "/zones/{scope}/dns_records", fields: "id name type content proxied proxiable ttl created_on modified_on", paging: "page", Permission: "DNS Read"},
-	{Name: "dns-firewall", Title: "DNS Firewall · clusters", Scope: "account", path: "/accounts/{scope}/dns_firewall", fields: "id name dns_firewall_ips upstream_ips ratelimit retries modified_on", paging: "page", Permission: "DNS Firewall Read"},
-	{Name: "load-balancers", Title: "Load Balancing · load balancers", Scope: "zone", path: "/zones/{scope}/load_balancers", fields: "id name enabled proxied default_pools fallback_pool steering_policy created_on modified_on", Permission: "Load Balancers Read"},
-	{Name: "pools", Title: "Load Balancing · pools", Scope: "account", path: "/accounts/{scope}/load_balancers/pools", fields: "id name enabled monitor minimum_origins check_regions created_on modified_on", Permission: "Load Balancing: Monitors and Pools Read"},
-	{Name: "pool-origins", Title: "Load Balancing · origins", Scope: "account", path: "/accounts/{scope}/load_balancers/pools/{resource}", Resource: "pools", fields: "poolId name address enabled port weight", transform: "origins", Permission: "Load Balancing: Monitors and Pools Read"},
+	{Name: "dns-firewall", Title: "DNS Firewall · clusters", Scope: "account", path: "/accounts/{scope}/dns_firewall", fields: "id name", paging: "page", Permission: "DNS Firewall Read", discoveryOnly: true},
+	{Name: "pools", Title: "Load Balancing · pools", Scope: "account", path: "/accounts/{scope}/load_balancers/pools", fields: "id name", Permission: "Load Balancing: Monitors and Pools Read", discoveryOnly: true},
 	{Name: "pool-health", Title: "Load Balancing · origin health", Scope: "account", path: "/accounts/{scope}/load_balancers/pools/{resource}/health", Resource: "pools", fields: "poolId region origin healthy healthValue failure_reason response_code rtt rttMs", transform: "pool-health", Permission: "Load Balancing: Monitors and Pools Read"},
 	{Name: "health-checks", Title: "Health Checks · status", Scope: "zone", path: "/zones/{scope}/healthchecks", fields: "id name address type status suspended failure_reason interval created_on modified_on", paging: "page", Permission: "Health Checks Read"},
 	{Name: "certificates", Title: "TLS · edge certificate validity", Scope: "zone", path: "/zones/{scope}/ssl/certificate_packs", fields: "id packId hosts issuer status packStatus expires_on daysUntilExpiry expired uploaded_on modified_on", transform: "certificates", paging: "page", Permission: "SSL and Certificates Read"},
-	{Name: "origin-certificates", Title: "TLS · origin certificate validity", Scope: "zone", path: "/certificates", fields: "id hostnames expires_on daysUntilExpiry expired requested_validity request_type", transform: "expiry", paging: "page", Permission: "SSL and Certificates Read"},
+	{Name: "origin-certificates", Title: "TLS · origin certificate validity", Scope: "zone", path: "/certificates", fields: "id hostnames expires_on daysUntilExpiry expired", transform: "expiry", paging: "page", Permission: "SSL and Certificates Read"},
 	{Name: "custom-certificates", Title: "TLS · custom certificate validity", Scope: "zone", path: "/zones/{scope}/custom_certificates", fields: "id hosts issuer status expires_on daysUntilExpiry expired uploaded_on modified_on", transform: "expiry", paging: "page", Permission: "SSL and Certificates Read"},
-	{Name: "tunnels", Title: "Tunnel · status", Scope: "account", path: "/accounts/{scope}/cfd_tunnel", fields: "id name status healthValue created_at deleted_at conns_active_at conns_inactive_at remote_config", paging: "page", Parameters: []string{"name", "status"}, Permission: "Cloudflare Tunnel Read"},
-	{Name: "workers", Title: "Workers · inventory", Scope: "account", path: "/accounts/{scope}/workers/scripts", fields: "id etag created_on modified_on last_deployed_from usage_model routes logpush", Permission: "Workers Scripts Read"},
+	{Name: "tunnels", Title: "Tunnel · status", Scope: "account", path: "/accounts/{scope}/cfd_tunnel", fields: "id name status healthValue created_at deleted_at conns_active_at conns_inactive_at", paging: "page", Parameters: []string{"name", "status"}, Permission: "Cloudflare Tunnel Read"},
+	{Name: "workers", Title: "Workers · inventory", Scope: "account", path: "/accounts/{scope}/workers/scripts", fields: "id name", Permission: "Workers Scripts Read", discoveryOnly: true},
 	{Name: "worker-deployments", Title: "Workers · deployment history", Scope: "account", path: "/accounts/{scope}/workers/scripts/{resource}/deployments", Resource: "workers", fields: "id created_on source strategy versions", resultPath: "result.deployments", paging: "page", from: "since", to: "until", TimeField: "created_on", Format: "logs", Permission: "Workers Scripts Read"},
-	{Name: "pages", Title: "Pages · projects", Scope: "account", path: "/accounts/{scope}/pages/projects", fields: "id name subdomain created_on domains production_branch", paging: "page", IDField: "name", Permission: "Pages Read"},
+	{Name: "pages", Title: "Pages · projects", Scope: "account", path: "/accounts/{scope}/pages/projects", fields: "id name", paging: "page", IDField: "name", Permission: "Pages Read", discoveryOnly: true},
 	{Name: "pages-deployments", Title: "Pages · deployment history", Scope: "account", path: "/accounts/{scope}/pages/projects/{resource}/deployments", Resource: "pages", fields: "id project_name environment created_on modified_on url latest_stage.name latest_stage.status latest_stage.started_on latest_stage.ended_on", paging: "page", Parameters: []string{"env"}, TimeField: "created_on", Format: "logs", Permission: "Pages Read"},
-	{Name: "containers", Title: "Containers · applications", Scope: "account", path: "/accounts/{scope}/containers/applications", fields: "id name created_at instances scheduling_policy", paging: "page_token", cursorPath: "result_info.next_page_token", Permission: "Workers Containers Read"},
-	{Name: "durable-namespaces", Title: "Durable Objects · namespaces", Scope: "account", path: "/accounts/{scope}/workers/durable_objects/namespaces", fields: "id name script class use_sqlite", paging: "page", Permission: "Workers Scripts Read"},
-	{Name: "d1", Title: "D1 · databases", Scope: "account", path: "/accounts/{scope}/d1/database", fields: "uuid name version num_tables file_size created_at", paging: "page", IDField: "uuid", Permission: "D1 Read"},
-	{Name: "r2", Title: "R2 · buckets", Scope: "account", path: "/accounts/{scope}/r2/buckets", fields: "name creation_date location storage_class", resultPath: "result.buckets", paging: "cursor", cursorPath: "result_info.cursor", IDField: "name", Permission: "Workers R2 Storage Read"},
-	{Name: "kv", Title: "KV · namespaces", Scope: "account", path: "/accounts/{scope}/storage/kv/namespaces", fields: "id title supports_url_encoding", paging: "page", NameField: "title", Permission: "Workers KV Storage Read"},
-	{Name: "queues", Title: "Queues · inventory", Scope: "account", path: "/accounts/{scope}/queues", fields: "queue_id queue_name created_on modified_on producers_total consumers_total", paging: "page", IDField: "queue_id", NameField: "queue_name", Permission: "Queues Read"},
-	{Name: "ai-gateways", Title: "AI Gateway · gateways", Scope: "account", path: "/accounts/{scope}/ai-gateway/gateways", fields: "id name created_at modified_at log_management cache_ttl rate_limiting_limit", paging: "page", Permission: "AI Gateway Read"},
-	{Name: "ai-search", Title: "AI Search · instances", Scope: "account", path: "/accounts/{scope}/ai-search/instances", fields: "id name status created_at modified_at paused source ai_gateway_id", paging: "page", Permission: "AI Search Read"},
-	{Name: "rulesets", Title: "WAF · rulesets", Scope: "zone", path: "/zones/{scope}/rulesets", fields: "id name description kind phase last_updated version", Permission: "Zone WAF Read"},
-	{Name: "rules", Title: "WAF · rules", Scope: "zone", path: "/zones/{scope}/rulesets/{resource}", Resource: "rulesets", fields: "id ref description action enabled expression last_updated version", resultPath: "result.rules", Permission: "Zone WAF Read"},
-	{Name: "devices", Title: "Zero Trust · devices", Scope: "account", path: "/accounts/{scope}/devices/physical-devices", fields: "id name device_type os_version os_distro_name os_distro_revision serial_number manufacturer model last_seen last_seen_user.email created_at updated_at active_registrations", paging: "cursor", cursorPath: "result_info.cursor", Parameters: []string{"search"}, Permission: "Zero Trust Read"},
-	{Name: "posture-rules", Title: "Zero Trust · posture checks", Scope: "account", path: "/accounts/{scope}/devices/posture", fields: "id name description type enabled schedule expiration", Permission: "Access: Device Posture Read"},
+	{Name: "containers", Title: "Containers · applications", Scope: "account", path: "/accounts/{scope}/containers/applications", fields: "id name", paging: "page_token", cursorPath: "result_info.next_page_token", Permission: "Workers Containers Read", discoveryOnly: true},
+	{Name: "durable-namespaces", Title: "Durable Objects · namespaces", Scope: "account", path: "/accounts/{scope}/workers/durable_objects/namespaces", fields: "id name", paging: "page", Permission: "Workers Scripts Read", discoveryOnly: true},
+	{Name: "ai-gateways", Title: "AI Gateway · gateways", Scope: "account", path: "/accounts/{scope}/ai-gateway/gateways", fields: "id name", paging: "page", Permission: "AI Gateway Read", discoveryOnly: true},
+	{Name: "ai-search", Title: "AI Search · instances", Scope: "account", path: "/accounts/{scope}/ai-search/instances", fields: "id name", paging: "page", Permission: "AI Search Read", discoveryOnly: true},
+	{Name: "devices", Title: "Zero Trust · devices", Scope: "account", path: "/accounts/{scope}/devices/physical-devices", fields: "id name", paging: "cursor", cursorPath: "result_info.cursor", Permission: "Zero Trust Read", discoveryOnly: true},
 	{Name: "dex-tests", Title: "DEX · tests and results", Scope: "account", path: "/accounts/{scope}/dex/tests/overview", fields: "id name description kind enabled host interval httpResults tracerouteResults created updated", resultPath: "result.tests", paging: "page", Permission: "Cloudflare DEX Read"},
 	{Name: "dex-http", Title: "DEX · HTTP test analytics", Scope: "account", path: "/accounts/{scope}/dex/http-tests/{resource}", Resource: "dex-tests", fields: "id time name availabilityPct dnsResponseTimeMs resourceFetchTimeMs serverResponseTimeMs", transform: "dex-http", TimeField: "time", Format: "timeseries", from: "from", to: "to", Parameters: []string{"interval", "colo"}, Permission: "Cloudflare DEX Read"},
 	{Name: "dex-device", Title: "DEX · device metrics", Scope: "account", path: "/accounts/{scope}/dex/devices/{resource}/fleet-status/over-time", Resource: "devices", fields: "id time cpu_pct memory_pct disk_usage_pct disk_read_bps disk_write_bps battery_pct battery_cycles network_rcvd_bps network_sent_bps connection_type mode", resultPath: "result.over_time", transform: "dex-device", from: "from", to: "to", TimeField: "time", Format: "timeseries", Parameters: []string{"interval", "colo"}, Permission: "Cloudflare DEX Read"},
 	{Name: "casb-findings", Title: "CASB · findings", Scope: "account", path: "/accounts/{scope}/data-security/posture/findings", fields: "id finding.id finding.name finding.description finding.severity finding.vendor ignored instance_count active_count archived_count latest_affliction_date integration.id integration.name integration.status", paging: "cursor", cursorPath: "result_info.cursor", Parameters: []string{"severity", "ignored", "integration_id", "type", "vendor", "search"}, Permission: "Zero Trust Read"},
-	{Name: "dlp-profiles", Title: "DLP · profiles", Scope: "account", path: "/accounts/{scope}/dlp/profiles", fields: "id name type description allowed_match_count confidence_threshold ocr_enabled created_at updated_at", Permission: "Zero Trust Read"},
-	{Name: "gateway-rules", Title: "Gateway · rules", Scope: "account", path: "/accounts/{scope}/gateway/rules", fields: "id name description enabled action filters precedence created_at updated_at", Permission: "Zero Trust Read"},
 	{Name: "audit", Title: "Audit Logs v2 · events", Scope: "account", path: "/accounts/{scope}/logs/audit", fields: "id action.time action.type action.result action.description actor.id actor.email actor.type actor.context resource.id resource.type resource.product resource.scope zone.id zone.name", paging: "audit", cursorPath: "result_info.cursor", from: "since", to: "before", TimeField: "action.time", Format: "logs", Parameters: []string{"action_type", "action_result", "actor_email", "resource_id", "resource_type", "resource_product", "zone_id"}, Permission: "Account Settings Read"},
 	{Name: "audit-history", Title: "Audit Logs v2 · resource change history", Scope: "account", path: "/accounts/{scope}/logs/audit/{resource}/history", Resource: "audit", fields: "id action.time action.type action.result action.description actor.email resource.id resource.type resource.product zone.id zone.name", paging: "audit", cursorPath: "result_info.cursor", from: "since", to: "before", TimeField: "action.time", Format: "logs", Parameters: []string{"action_time"}, Permission: "Account Settings Read"},
 }
 
+// Discovery sources are deliberately absent from the panel query catalog.
 func restCatalog() []restOperation {
-	result := append([]restOperation{}, restOperations...)
-	for i := range result {
-		result[i].Columns = append(strings.Fields(result[i].fields), "snapshotTime")
-		if result[i].Format == "" {
-			result[i].Format = "table"
-		}
-		if result[i].IDField == "" {
-			result[i].IDField = "id"
-		}
-		if result[i].NameField == "" {
-			result[i].NameField = "name"
+	result := []restOperation{}
+	for _, op := range restOperations {
+		if !op.discoveryOnly {
+			result = append(result, prepareRESTOperation(op))
 		}
 	}
 	return result
 }
+
+func prepareRESTOperation(op restOperation) restOperation {
+	op.Columns = append(strings.Fields(op.fields), "snapshotTime")
+	if op.Format == "" {
+		op.Format = "table"
+	}
+	if op.IDField == "" {
+		op.IDField = "id"
+	}
+	return op
+}
+
 func findRESTOperation(name string) (restOperation, error) {
-	for _, op := range restCatalog() {
+	for _, op := range restOperations {
 		if op.Name == name {
-			return op, nil
+			return prepareRESTOperation(op), nil
 		}
 	}
-	return restOperation{}, fmt.Errorf("select a supported read-only operation")
+	return restOperation{}, fmt.Errorf("select a supported operational query")
 }
 
 var restResourceID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`)
@@ -119,6 +113,13 @@ func (d *Datasource) restQuery(ctx context.Context, q *Query, dq backend.DataQue
 	if err != nil {
 		return SQLResult{}, "", err
 	}
+	if op.discoveryOnly {
+		return SQLResult{}, "", fmt.Errorf("%s is available through resource discovery, not panel queries", op.Title)
+	}
+	return d.fetchREST(ctx, op, q, dq)
+}
+
+func (d *Datasource) fetchREST(ctx context.Context, op restOperation, q *Query, dq backend.DataQuery) (SQLResult, string, error) {
 	if q.Format == "traces" {
 		return SQLResult{}, "", fmt.Errorf("read-only operations support Table, Logs, or Time series")
 	}
@@ -181,6 +182,10 @@ func (d *Datasource) restQuery(ctx context.Context, q *Query, dq backend.DataQue
 	result := SQLResult{Data: []map[string]any{}}
 	now := time.Now().UTC()
 	pageSize := min(50, limit)
+	// Pages rejects the larger page size used by other Cloudflare endpoints.
+	if op.Name == "pages" || op.Name == "pages-deployments" {
+		pageSize = min(10, pageSize)
+	}
 	if op.Name == "origin-certificates" {
 		pageSize = max(5, pageSize)
 	}
@@ -307,7 +312,7 @@ func (d *Datasource) restQuery(ctx context.Context, q *Query, dq backend.DataQue
 			delete(row, "snapshotTime")
 		}
 		for name := range row {
-			if len(q.Columns) > 0 && !restFieldSelected(q.Columns, name) && name != "snapshotTime" && name != op.TimeField && name != op.IDField && name != op.NameField {
+			if len(q.Columns) > 0 && !restFieldSelected(q.Columns, name) && name != "snapshotTime" && name != op.TimeField && name != op.IDField && name != "name" {
 				delete(row, name)
 			}
 		}
@@ -316,7 +321,7 @@ func (d *Datasource) restQuery(ctx context.Context, q *Query, dq backend.DataQue
 		if q.Format == "timeseries" && name == "snapshotTime" && q.TimeField != "snapshotTime" {
 			continue
 		}
-		if len(q.Columns) > 0 && name != "snapshotTime" && name != q.TimeField && name != op.IDField && name != op.NameField && !restFieldSelected(q.Columns, name) {
+		if len(q.Columns) > 0 && name != "snapshotTime" && name != q.TimeField && name != op.IDField && name != "name" && !restFieldSelected(q.Columns, name) {
 			continue
 		}
 		column := resultColumn{Name: name}
@@ -338,13 +343,6 @@ func contains(values []string, value string) bool {
 }
 
 func restRows(raw any, op restOperation, resource string, now time.Time) ([]map[string]any, error) {
-	if op.transform == "origins" {
-		object, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("invalid pool response")
-		}
-		raw = object["origins"]
-	}
 	if op.transform == "dex-http" || op.transform == "dex-device" {
 		rows, err := dexRows(raw, op, now)
 		for _, row := range rows {
@@ -394,9 +392,6 @@ func restRows(raw any, op restOperation, resource string, now time.Time) ([]map[
 					selected[key] = value
 				}
 			}
-		}
-		if op.transform == "origins" {
-			selected["poolId"] = resource
 		}
 		if op.transform == "certificates" || op.transform == "expiry" {
 			if t, ok := timestamp(row["expires_on"]); ok && t != nil {

@@ -25,24 +25,24 @@ The included Workers logs, Containers logs, and trace examples use the SQL API. 
 
 ## Resources and audit
 
-The **Resources and audit** editor shows the read permission for the selected operation. Add only permissions for operations you use, scoped to the appropriate accounts or zones. Resource browsing uses the same permission as the inventory operation; you can enter IDs manually.
+The **Resources and audit** editor shows the read permission for the selected operation. Add only permissions for operations you use, scoped to the appropriate accounts or zones. Resource browsing uses the corresponding product read permission; you can enter IDs manually.
 
-| Operations                                          | Read permission                                                                |
-| --------------------------------------------------- | ------------------------------------------------------------------------------ |
-| DNS records / DNS Firewall                          | DNS Read (zone) / DNS Firewall Read (account)                                  |
-| Load balancers / pools, origins, health             | Load Balancers Read (zone) / Load Balancing: Monitors and Pools Read (account) |
-| Health Checks / certificates                        | Health Checks Read / SSL and Certificates Read (zone)                          |
-| Tunnels                                             | Cloudflare Tunnel Read                                                         |
-| Workers, deployments, Durable Object namespaces     | Workers Scripts Read                                                           |
-| Pages and deployments / Containers                  | Pages Read / Workers Containers Read                                           |
-| D1 / R2 / KV / Queues                               | D1 Read / Workers R2 Storage Read / Workers KV Storage Read / Queues Read      |
-| AI Gateway / AI Search                              | AI Gateway Read / AI Search Read                                               |
-| WAF rulesets and rules                              | Zone WAF Read                                                                  |
-| Devices, Gateway rules, DLP profiles, CASB findings | Zero Trust Read                                                                |
-| Posture checks / DEX tests and metrics              | Access: Device Posture Read / Cloudflare DEX Read                              |
-| Audit Logs v2 and resource history                  | Account Settings Read                                                          |
+| Queries or resource selectors                           | Read permission                                       |
+| ------------------------------------------------------- | ----------------------------------------------------- |
+| DNS Firewall cluster discovery                          | DNS Firewall Read (account)                           |
+| Pool discovery and origin health                        | Load Balancing: Monitors and Pools Read (account)     |
+| Health Checks / certificates                            | Health Checks Read / SSL and Certificates Read (zone) |
+| Tunnel status                                           | Cloudflare Tunnel Read                                |
+| Worker discovery/deployments, Durable Object namespaces | Workers Scripts Read                                  |
+| Pages discovery/deployments / Container discovery       | Pages Read / Workers Containers Read                  |
+| AI Gateway / AI Search discovery                        | AI Gateway Read / AI Search Read                      |
+| Device discovery / CASB findings                        | Zero Trust Read                                       |
+| DEX tests and metrics                                   | Cloudflare DEX Read                                   |
+| Audit Logs v2 and resource history                      | Account Settings Read                                 |
 
-Permissions without a zone label are account permissions. In the token editor, product permission groups may display **Read** separately from their name. Cloudflare may accept additional permission groups; these are the read-oriented choices exposed by the plugin. In particular, the [Audit Logs v2 endpoint](https://developers.cloudflare.com/api/resources/accounts/subresources/logs/subresources/audit/methods/list/) lists **Account Settings Read**, and the [DLP profiles endpoint](https://developers.cloudflare.com/api/resources/zero_trust/subresources/dlp/subresources/profiles/methods/list/) lists **Zero Trust Read**. See the [API permission reference](https://developers.cloudflare.com/fundamentals/api/reference/permissions/) and the [API schemas](https://github.com/cloudflare/api-schemas) for operation-specific alternatives.
+Permissions without a zone label are account permissions. In the token editor, product permission groups may display **Read** separately from their name. Cloudflare may accept additional permission groups; these are the read-oriented choices exposed by the plugin. The [Audit Logs v2 endpoint](https://developers.cloudflare.com/api/resources/accounts/subresources/logs/subresources/audit/methods/list/) lists **Account Settings Read**. See the [API permission reference](https://developers.cloudflare.com/fundamentals/api/reference/permissions/) and the [API schemas](https://github.com/cloudflare/api-schemas) for operation-specific alternatives.
+
+These permissions support operational queries and optional resource selectors. Standalone DNS record, WAF rule, posture-check, DLP profile, Gateway policy, and generic inventory tables are not supported panel queries. Product analytics and logs retain their SQL/GraphQL permissions above.
 
 ## Troubleshooting
 

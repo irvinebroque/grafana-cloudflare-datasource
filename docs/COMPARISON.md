@@ -34,3 +34,11 @@ For Explore, it already supplies log context and directional pagination, full-ra
 - Query and response fixtures cover upstream failures and edge cases; live tests cover available account data. Neither establishes feature parity with every service supported by the three reference plugins.
 
 See [validation](VALIDATION.md) for results and remaining upstream limitations.
+
+## Scope review follow-up
+
+The reference plugins use provider resources to discover telemetry. Their resource endpoints supply metric dimensions, projects, services, or resource IDs; they do not expose general cloud configuration as dashboard tables. See CloudWatch's [resource handlers](https://github.com/grafana/grafana-cloudwatch-datasource/blob/6be2cdbc59df9877b46d349fe3538d775cdb0864/pkg/cloudwatch/resource_handler.go).
+
+The Cloudflare plugin follows that boundary: DNS record contents, WAF expressions, posture-check definitions, DLP profiles, Gateway policies, and standalone inventory queries were removed. Resource selectors retain ID/name discovery for query construction. Health, certificate expiry, deployments, DEX metrics, CASB findings, and audit/history remain useful observability queries. Product analytics, logs, and native traces retain their existing coverage.
+
+SQL and GraphQL now each have one language choice with Grafana's standard **Builder / Code** control. Existing saved query types still open in their original editor. Analytics Engine SQL and Workers telemetry retain separate choices because they use different query dialects and request contracts. The seven-panel overview and two-panel trace dashboard remain unchanged.

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { QueryEditorProps, SelectableValue } from "@grafana/data";
-import { Alert, Button, Field, Input, Select } from "@grafana/ui";
+import { Alert, Button, Field, Input, RadioButtonGroup, Select } from "@grafana/ui";
 import type { DataSource } from "../datasource";
 import {
   defaultAnalyticsSQL,
@@ -27,28 +27,14 @@ import { defaultMetric, isNumericType, migrateQuery, queryForMode } from "../que
 type Props = QueryEditorProps<DataSource, CloudflareQuery, CloudflareOptions>;
 
 const queryTypes: Array<SelectableValue<QueryType>> = [
-  {
-    label: "Builder",
-    value: "builder",
-    description: "Discover datasets and build parameterized SQL",
-  },
-  { label: "SQL", value: "sql", description: "Cloudflare SQL API (beta)" },
-  {
-    label: "GraphQL builder",
-    value: "graphql-builder",
-    description: "Discover analytics across Cloudflare products",
-  },
-  { label: "GraphQL", value: "graphql", description: "Cloudflare GraphQL Analytics API" },
+  { label: "SQL", value: "builder", description: "Cloudflare SQL API (beta)" },
+  { label: "GraphQL", value: "graphql-builder", description: "Cloudflare GraphQL Analytics API" },
   {
     label: "Resources and audit",
     value: "rest",
-    description: "Read-only operational state, inventory, and audit history",
+    description: "Operational health, deployments, findings, and audit history",
   },
-  {
-    label: "Analytics Engine SQL",
-    value: "analytics",
-    description: "Existing Analytics Engine SQL endpoint",
-  },
+  { label: "Analytics Engine SQL", value: "analytics", description: "Analytics Engine datasets" },
   {
     label: "Workers telemetry",
     value: "telemetry",
@@ -89,6 +75,26 @@ const rowStyle: React.CSSProperties = {
 
 export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }: Props) {
   const query = migrateQuery({ ...defaultQuery, ...stored });
+
+  const language =
+    query.queryType === "sql"
+      ? "builder"
+      : query.queryType === "graphql"
+        ? "graphql-builder"
+        : query.queryType;
+
+  const editorOptions: Array<SelectableValue<QueryType>> | undefined =
+    language === "builder"
+      ? [
+          { label: "Builder", value: "builder" },
+          { label: "Code", value: "sql" },
+        ]
+      : language === "graphql-builder"
+        ? [
+            { label: "Builder", value: "graphql-builder" },
+            { label: "Code", value: "graphql" },
+          ]
+        : undefined;
 
   if (stored.queryType === "graphql-builder") query.timeField = stored.timeField ?? "";
 
@@ -186,13 +192,24 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           <Select
             aria-label="Query language"
             width={28}
-            value={query.queryType}
+            value={language}
             options={queryTypes}
             onChange={(value) => {
-              if (value.value) onChange(queryForMode(query, value.value));
+              if (value.value && value.value !== language)
+                onChange(queryForMode(query, value.value));
             }}
           />
         </Field>
+        {editorOptions && (
+          <Field label="Editor">
+            <RadioButtonGroup
+              aria-label="Query editor"
+              options={editorOptions}
+              value={query.queryType}
+              onChange={(type) => onChange(queryForMode(query, type))}
+            />
+          </Field>
+        )}
         <Field label="Result format">
           <Select
             aria-label="Result format"

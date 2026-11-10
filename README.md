@@ -90,15 +90,15 @@ Grafana encrypts the saved token. Cloudflare API requests run through the plugin
 
 ### Discover analytics across Cloudflare
 
-Choose **GraphQL builder**, then select an account or zone and an **Analytics dataset**. Search the provider’s schema for DNS, DNS Firewall, Containers, Durable Objects, AI Gateway, AI Search, Gateway, firewall events, Load Balancing, Health Checks, and other products.
+Choose **GraphQL** and **Builder**, then select an account or zone and an **Analytics dataset**. Search the provider’s schema for DNS, DNS Firewall, Containers, Durable Objects, AI Gateway, AI Search, Gateway, firewall events, Load Balancing, Health Checks, and other products.
 
 Select metrics, dimensions, and filters. The editor checks the selected scope’s availability and field permissions, shows query-range and retention limits, and chooses a supported time bucket for Grafana’s panel interval. Filters use typed variables. Provider aggregates and quantiles retain their original semantics.
 
-The catalog excludes deprecated and staging nodes. Availability depends on your account, zone, token, plan, and retained data. For nested Boolean filters, fields with arguments, or other advanced selections, use **GraphQL** and set its result path. See the [coverage record](docs/COVERAGE.md).
+The catalog excludes deprecated and staging nodes. Availability depends on your account, zone, token, plan, and retained data. For nested Boolean filters, fields with arguments, or other advanced selections, choose **Code** in GraphQL and set its result path. See the [coverage record](docs/COVERAGE.md).
 
 ### Write SQL
 
-Select **SQL** and **Time series**. This query charts requests for one Worker:
+Select **SQL**, **Code**, and **Time series**. This query charts requests for one Worker:
 
 ```sql
 SELECT $__timeGroup(timestamp) AS time,
@@ -139,9 +139,9 @@ Cloudflare sampling and retention can leave missing spans. Spans produced outsid
 
 | Query language           | How to use it                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **GraphQL builder**      | Discover analytics datasets, fields, filters, availability, and time buckets for the selected account or zone.                                                 |
-| **GraphQL**              | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries.            |
-| **Resources and audit**  | Browse read-only inventory, health, certificate expiry, deployments, DEX metrics, CASB findings, and audit/history.                                            |
+| **GraphQL · Builder**    | Discover analytics datasets, fields, filters, availability, and time buckets for the selected account or zone.                                                 |
+| **GraphQL · Code**       | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries.            |
+| **Resources and audit**  | Query health, certificate expiry, deployments, DEX metrics, CASB findings, and audit/history. Browse resource IDs when needed.                                 |
 | **Workers telemetry**    | Requires [Workers Observability Write](docs/PERMISSIONS.md#workers-telemetry). Paste a Query Builder request; use `events.events` as the result path for logs. |
 | **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.                                                                                    |
 

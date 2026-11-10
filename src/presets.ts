@@ -51,11 +51,8 @@ function graphMetric(
 const resourcePresets: Array<[string, string, "account" | "zone"]> = [
   ["TLS · certificate expiry", "certificates", "zone"],
   ["Tunnel · current status", "tunnels", "account"],
-  ["Load Balancing · pools", "pools", "account"],
-  ["Zero Trust · posture checks", "posture-rules", "account"],
   ["CASB · findings", "casb-findings", "account"],
   ["DEX · tests and results", "dex-tests", "account"],
-  ["DLP · profiles", "dlp-profiles", "account"],
   ["Audit Logs v2 · events", "audit", "account"],
 ];
 

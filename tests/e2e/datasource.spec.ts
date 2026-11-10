@@ -82,6 +82,10 @@ test("loads the plugin, discovers the catalog, and renders grouped real metrics"
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/explore");
   await expect(page.getByLabel("Query language")).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Builder", exact: true })).toBeChecked();
+  await page.getByLabel("Query language").click();
+  await expect(page.getByRole("option")).toHaveCount(5);
+  await page.keyboard.press("Escape");
   await page.getByText(/Dataset schema · [1-9]/).waitFor();
   const result = await example(page, "Workers · requests");
   expect(result.results.A?.frames?.length).toBeGreaterThan(0);
@@ -222,7 +226,8 @@ test("searches traces and renders an entire distributed trace", async ({ page, r
 test("edits raw SQL and recovers after an upstream validation error", async ({ page }) => {
   await page.goto("/explore");
   await page.getByLabel("Query language").click();
-  await page.getByText("SQL", { exact: true }).click();
+  await page.getByRole("option", { name: "SQL Cloudflare SQL API (beta)", exact: true }).click();
+  await page.getByRole("radio", { name: "Code", exact: true }).check();
   const sql = page.getByLabel("SQL query");
   await editCode(sql, "SELECT missingColumn FROM events.workersInvocations LIMIT 1");
   const failed = mainQuery(page);
@@ -244,7 +249,8 @@ test("completes SQL from the live catalog and runs with the keyboard", async ({ 
   await page.goto("/explore");
   await page.getByText(/Dataset schema · [1-9]/).waitFor();
   await page.getByLabel("Query language").click();
-  await page.getByText("SQL", { exact: true }).click();
+  await page.getByRole("option", { name: "SQL Cloudflare SQL API (beta)", exact: true }).click();
+  await page.getByRole("radio", { name: "Code", exact: true }).check();
   const sql = page.getByLabel("SQL query");
   await editCode(sql, "SELECT 1 AS value FROM events.workers");
   await sql.press("Control+Space");
@@ -307,6 +313,8 @@ test("rejects null JSON without crashing and recovers in both raw API modes", as
   for (const mode of ["GraphQL", "Workers telemetry"]) {
     await page.getByLabel("Query language").click();
     await page.getByText(mode, { exact: true }).click();
+
+    if (mode === "GraphQL") await page.getByRole("radio", { name: "Code", exact: true }).check();
     const input = page.getByLabel(mode === "GraphQL" ? "GraphQL variables" : "Telemetry query");
 
     const valid =
@@ -348,14 +356,16 @@ test("keeps separate SQL dialects when switching query languages", async ({ page
   const legacy = `SELECT $__timeGroup(timestamp) AS time, SUM(_sample_interval) AS events FROM ${name} WHERE timestamp >= toDateTime($__fromTime) AND timestamp <= toDateTime($__toTime) GROUP BY time ORDER BY time LIMIT 10`;
   await page.goto("/explore");
   await page.getByLabel("Query language").click();
-  await page.getByText("SQL", { exact: true }).click();
+  await page.getByRole("option", { name: "SQL Cloudflare SQL API (beta)", exact: true }).click();
+  await page.getByRole("radio", { name: "Code", exact: true }).check();
   await editCode(page.getByLabel("SQL query"), unified);
   await page.getByLabel("Query language").click();
   await page.getByText("Analytics Engine SQL", { exact: true }).click();
   await expect(codeEditor(page, "SQL query")).toContainText("your_dataset");
   await editCode(page.getByLabel("SQL query"), legacy);
   await page.getByLabel("Query language").click();
-  await page.getByText("SQL", { exact: true }).click();
+  await page.getByRole("option", { name: "SQL Cloudflare SQL API (beta)", exact: true }).click();
+  await page.getByRole("radio", { name: "Code", exact: true }).check();
   await expect(codeEditor(page, "SQL query")).toContainText(unified);
   await page.getByLabel("Query language").click();
   await page.getByText("Analytics Engine SQL", { exact: true }).click();
@@ -435,7 +445,7 @@ test("discovers GraphQL analytics and renders real metrics through the shared bu
 }) => {
   await page.goto("/explore");
   await page.getByLabel("Query language").click();
-  await page.getByText("GraphQL builder", { exact: true }).click();
+  await page.getByText("GraphQL", { exact: true }).click();
   await expect(
     page.getByText("Available for this scope and token", { exact: false }),
   ).toBeVisible();
@@ -464,7 +474,7 @@ test("renders the simple trace dashboard with Grafana's native viewer", async ({
   await page.screenshot({ path: ".local/native-trace-dashboard.png", fullPage: true });
 });
 
-test("renders real operational inventory with native Grafana tables", async ({ page }) => {
+test("renders real operational state and retains resource discovery", async ({ page }) => {
   await page.goto("/explore");
   const result = await example(page, "Tunnel · current status");
   expect(result.results.A?.frames?.[0]?.data.values[0]?.length).toBeGreaterThan(0);
