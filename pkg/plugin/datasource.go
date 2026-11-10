@@ -102,7 +102,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq backend.DataQuery) backend.DataResponse {
 	if err := ctx.Err(); err != nil {
-		return backend.ErrDataResponse(backend.StatusTimeout, err.Error())
+		return queryError(err)
 	}
 	var q Query
 	if err := json.Unmarshal(dq.JSON, &q); err != nil {
@@ -119,7 +119,7 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	}
 	account, zone, err := d.scope(q)
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusBadRequest, err.Error())
+		return queryError(err)
 	}
 	if q.QueryType != "builder" && q.QueryType != "" {
 		q.Dataset = ""
@@ -141,7 +141,7 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 		err = fmt.Errorf("unsupported query type %q", q.QueryType)
 	}
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusBadRequest, err.Error())
+		return queryError(err)
 	}
 	uid := ""
 	if pc.DataSourceInstanceSettings != nil {
@@ -273,7 +273,7 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		body, err = d.client.request(ctx, http.MethodGet, path, nil)
 	}
 	if err != nil {
-		return sendResourceError(sender, 502, err.Error())
+		return sendResourceError(sender, int(queryError(err).Status), err.Error())
 	}
 	d.mu.Lock()
 	for key, cached := range d.cache {

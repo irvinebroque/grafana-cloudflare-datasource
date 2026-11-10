@@ -208,7 +208,7 @@ func TestResourcePaginationFailsWithoutPartialSuccess(t *testing.T) {
 	var status int
 	sender := backend.CallResourceResponseSenderFunc(func(response *backend.CallResourceResponse) error { status = response.Status; return nil })
 	d.CallResource(context.Background(), &backend.CallResourceRequest{Method: "GET", Path: "accounts", URL: "/accounts"}, sender)
-	if status != 502 || len(d.cache) != 0 {
+	if status != 403 || len(d.cache) != 0 {
 		t.Errorf("partial list became successful or cached: %d", status)
 	}
 }

@@ -171,8 +171,12 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 				frame.Meta.PreferredVisualization = data.VisTypeLogs
 			}
 			for _, field := range frame.Fields {
+				if field.Config == nil {
+					field.Config = &data.FieldConfig{}
+				}
+				field.Config.SetFilterable(q.Format == "logs" && (q.QueryType == "builder" || q.QueryType == "") && identifier.MatchString(field.Name) && field.Type() == data.FieldTypeNullableString && field.Name != "attributes")
 				if field.Name == "traceId" && uid != "" {
-					field.Config = &data.FieldConfig{Links: []data.DataLink{{Title: "View trace", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "builder", "dataset": "logs.traces", "format": "traces", "traceId": "${__value.raw}", "accountId": q.AccountID, "scope": "account", "limit": 10000}}}}}
+					field.Config.Links = []data.DataLink{{Title: "View trace", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "builder", "dataset": "logs.traces", "format": "traces", "traceId": "${__value.raw}", "accountId": q.AccountID, "scope": "account", "limit": 10000}}}}
 				}
 			}
 		}
@@ -209,7 +213,9 @@ func tableFrame(rows []map[string]any, q Query, refID string, columns []resultCo
 			for i, row := range rows {
 				values[i], _ = number(row[key])
 			}
-			frame.Fields = append(frame.Fields, data.NewField(key, nil, values))
+			field := data.NewField(key, nil, values)
+			field.Config = &data.FieldConfig{Unit: metricUnit(q, key)}
+			frame.Fields = append(frame.Fields, field)
 			continue
 		}
 		boolean := columnType(column.Type) == "Bool"
@@ -374,21 +380,35 @@ func seriesFrames(rows []map[string]any, q Query, refID string, columns []result
 		frame := data.NewFrame(s.metric, data.NewField("time", nil, times), data.NewField(s.metric, s.labels, values))
 		frame.RefID = refID
 		frame.Meta = &data.FrameMeta{Type: data.FrameTypeTimeSeriesMulti, PreferredVisualization: data.VisTypeGraph}
-		unit := ""
-		switch field := metrics[s.metric].Field; {
-		case strings.HasSuffix(field, "Us"):
-			unit = "µs"
-		case strings.HasSuffix(field, "Ms"):
-			unit = "ms"
-		case strings.HasSuffix(field, "Bytes"):
-			unit = "bytes"
-		}
+		unit := metricUnit(q, s.metric)
 		if unit != "" {
 			frame.Fields[1].Config = &data.FieldConfig{Unit: unit}
 		}
 		frames = append(frames, frame)
 	}
 	return frames, nil
+}
+
+func metricUnit(q Query, name string) string {
+	for _, metric := range q.Metrics {
+		if metric.Alias == name && (q.QueryType == "builder" || q.QueryType == "") {
+			if metric.Aggregation == "count" {
+				return ""
+			}
+			name = metric.Field
+			break
+		}
+	}
+	switch {
+	case strings.HasSuffix(name, "Us"):
+		return "µs"
+	case strings.HasSuffix(name, "Ms"):
+		return "ms"
+	case strings.HasSuffix(name, "Bytes"):
+		return "bytes"
+	default:
+		return ""
+	}
 }
 
 func traceFrames(rows []map[string]any, refID string) (data.Frames, error) {

@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
 const maxResponseBytes = 32 << 20
@@ -44,12 +48,12 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 		req.Header.Set("User-Agent", "grafana-cloudflare-datasource/0.1.1")
 		resp, err := c.http.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("Cloudflare request failed: %w", err)
+			return nil, backend.DownstreamError(fmt.Errorf("Cloudflare request failed: %w", err))
 		}
 		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 		resp.Body.Close()
 		if readErr != nil {
-			return nil, fmt.Errorf("read Cloudflare response: %w", readErr)
+			return nil, backend.DownstreamError(fmt.Errorf("read Cloudflare response: %w", readErr))
 		}
 		if len(data) > maxResponseBytes {
 			return nil, fmt.Errorf("Cloudflare response exceeds 32 MiB; reduce the time range or row limit")
@@ -96,5 +100,34 @@ func (c *client) apiError(resp *http.Response, body []byte) error {
 	if len(message) > 2000 {
 		message = message[:2000]
 	}
-	return fmt.Errorf("Cloudflare API HTTP %d (ray %s): %s", resp.StatusCode, resp.Header.Get("CF-Ray"), message)
+	status := resp.StatusCode
+	if status < 400 {
+		status = http.StatusBadGateway
+	}
+	return backend.DownstreamError(&cloudflareAPIError{status: backend.Status(status), message: fmt.Sprintf("Cloudflare API HTTP %d (ray %s): %s", resp.StatusCode, resp.Header.Get("CF-Ray"), message)})
+}
+
+type cloudflareAPIError struct {
+	status  backend.Status
+	message string
+}
+
+func (e *cloudflareAPIError) Error() string { return e.message }
+
+func queryError(err error) backend.DataResponse {
+	response := backend.DataResponse{Error: err, Status: backend.StatusBadRequest}
+	var api *cloudflareAPIError
+	var network net.Error
+	switch {
+	case errors.As(err, &api):
+		response.Status = api.status
+		response.ErrorSource = backend.ErrorSourceDownstream
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &network) && network.Timeout():
+		response.Status = backend.StatusTimeout
+		response.ErrorSource = backend.ErrorSourceDownstream
+	case backend.IsDownstreamError(err):
+		response.Status = backend.StatusBadGateway
+		response.ErrorSource = backend.ErrorSourceDownstream
+	}
+	return response
 }
