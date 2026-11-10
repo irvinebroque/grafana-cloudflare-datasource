@@ -1,4 +1,4 @@
-import type { CloudflareQuery } from "./types";
+import { defaultQuery, type CloudflareQuery } from "./types";
 
 export interface LogAnchor {
   timestamp: number;
@@ -25,17 +25,14 @@ export function contextTarget(anchor: LogAnchor, original?: CloudflareQuery): Cl
 
   return {
     ...original,
+    ...defaultQuery,
     accountId: anchor.accountId || original?.accountId,
     refId: "context",
-    queryType: "builder",
     dataset: container ? "logs.containerLogs" : "logs.workersLogs",
-    scope: "account",
-    timeField: "timestamp",
     format: "logs",
     filters,
-    columns: container ? ["timestamp", "message", "level", "containerId", "placementId", "id"] : [],
     metrics: [],
-    traceId: "",
+    groupBy: [],
     limit: 100,
   };
 }

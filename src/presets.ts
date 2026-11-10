@@ -1,4 +1,4 @@
-import type { CloudflareQuery } from "./types";
+import { defaultQuery, type CloudflareQuery } from "./types";
 
 interface Preset {
   label: string;
@@ -7,30 +7,33 @@ interface Preset {
 
 function metric(
   dataset: string,
-  field: string,
+  field = "",
   aggregation = "count",
   groupBy: string[] = [],
 ): Partial<CloudflareQuery> {
   return {
-    queryType: "builder",
-    scope: "account",
-    timeField: "timestamp",
-    sampled: true,
+    ...defaultQuery,
     dataset,
-    format: "timeseries",
     metrics: [{ aggregation, field, alias: aggregation === "count" ? "requests" : field }],
     groupBy,
-    filters: [],
-    columns: [],
-    traceId: "",
-    limit: 1000,
+  };
+}
+
+function logs(dataset: string): Partial<CloudflareQuery> {
+  return {
+    ...defaultQuery,
+    dataset,
+    format: "logs",
+    metrics: [],
+    groupBy: [],
+    limit: 100,
   };
 }
 
 export const presets: Preset[] = [
   {
     label: "Workers · requests",
-    query: metric("events.workersInvocations", "", "count", ["scriptName"]),
+    query: defaultQuery,
   },
   {
     label: "Workers · p99 CPU time (µs)",
@@ -38,53 +41,20 @@ export const presets: Preset[] = [
   },
   {
     label: "Workers · logs",
-    query: {
-      queryType: "builder",
-      scope: "account",
-      timeField: "timestamp",
-      sampled: true,
-      dataset: "logs.workersLogs",
-      format: "logs",
-      columns: [],
-      filters: [],
-      groupBy: [],
-      metrics: [],
-      traceId: "",
-      limit: 100,
-    },
+    query: logs("logs.workersLogs"),
   },
   {
     label: "Containers · logs",
-    query: {
-      queryType: "builder",
-      scope: "account",
-      timeField: "timestamp",
-      sampled: true,
-      dataset: "logs.containerLogs",
-      format: "logs",
-      columns: ["timestamp", "message", "level", "containerId", "placementId", "id"],
-      filters: [],
-      groupBy: [],
-      metrics: [],
-      traceId: "",
-      limit: 100,
-    },
+    query: logs("logs.containerLogs"),
   },
   {
     label: "Workers · distributed trace",
     query: {
-      queryType: "builder",
-      scope: "account",
-      timeField: "timestamp",
-      sampled: true,
+      ...defaultQuery,
       dataset: "logs.traces",
       format: "traces",
-      columns: [],
-      filters: [],
       groupBy: [],
       metrics: [],
-      traceId: "",
-      limit: 1000,
     },
   },
   {
@@ -92,9 +62,9 @@ export const presets: Preset[] = [
     query: metric("events.httpRequests", "", "count", ["edgeResponseStatus"]),
   },
   { label: "D1 · query latency (ms)", query: metric("events.d1Queries", "queryDurationMs", "avg") },
-  { label: "R2 · operations", query: metric("events.r2CombinedOperations", "") },
-  { label: "KV · requests", query: metric("events.kvRequests", "") },
-  { label: "Queues · messages", query: metric("events.queuesMessages", "") },
+  { label: "R2 · operations", query: metric("events.r2CombinedOperations") },
+  { label: "KV · requests", query: metric("events.kvRequests") },
+  { label: "Queues · messages", query: metric("events.queuesMessages") },
   {
     label: "Workers AI · inference time (ms)",
     query: metric("events.aiInference", "inferenceTimeMs", "avg"),

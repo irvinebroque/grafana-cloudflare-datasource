@@ -17,7 +17,7 @@ import {
   type ResultFormat,
 } from "../types";
 import { presets } from "../presets";
-import { migrateQuery, queryForMode } from "../queryState";
+import { defaultMetric, migrateQuery, queryForMode } from "../queryState";
 
 type Props = QueryEditorProps<DataSource, CloudflareQuery, CloudflareOptions>;
 
@@ -133,20 +133,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
       dataset: name,
       scope: entry?.columns?.some((column) => column.name === "accountTag") ? "account" : "zone",
       format,
-      metrics: isLog
-        ? []
-        : [
-            {
-              aggregation: entry?.kind?.states?.valid_aggregations[0] ?? "count",
-              field: entry?.kind?.states
-                ? (entry.columns?.find(
-                    (column) =>
-                      /^(U?Int|Float)/.test(column.data_type) && column.name !== "sampleInterval",
-                  )?.name ?? "")
-                : "",
-              alias: entry?.kind?.states ? "value" : "count",
-            },
-          ],
+      metrics: isLog ? [] : [defaultMetric(entry, entry?.kind?.states ? "value" : "count")],
       timeField:
         entry?.columns?.find((column) => column.data_type.startsWith("Date"))?.name ?? "timestamp",
       sampled: entry?.columns?.some((column) => column.name === "sampleInterval"),
@@ -407,17 +394,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
                     update({
                       metrics: [
                         ...(query.metrics ?? []),
-                        {
-                          aggregation: supportedAggregations?.[0] ?? "count",
-                          field: supportedAggregations
-                            ? (dataset?.columns?.find(
-                                (column) =>
-                                  /^(U?Int|Float)/.test(column.data_type) &&
-                                  column.name !== "sampleInterval",
-                              )?.name ?? "")
-                            : "",
-                          alias: `value_${query.metrics?.length ?? 0}`,
-                        },
+                        defaultMetric(dataset, `value_${query.metrics?.length ?? 0}`),
                       ],
                     })
                   }
@@ -450,7 +427,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           {query.format === "logs" && (
             <Field
               label="Columns"
-              description="Empty uses Workers log columns. Select the timestamp and message columns for other log datasets."
+              description="Empty uses the dataset's default log columns. Select the timestamp and message columns for other log datasets."
             >
               <Select
                 aria-label="Log columns"

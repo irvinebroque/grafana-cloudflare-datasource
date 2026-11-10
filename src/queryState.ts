@@ -6,6 +6,8 @@ import {
   defaultTelemetry,
   type CloudflareQuery,
   type QueryType,
+  type Dataset,
+  type Metric,
 } from "./types";
 
 export function migrateQuery(query: CloudflareQuery): CloudflareQuery {
@@ -18,18 +20,11 @@ export function migrateQuery(query: CloudflareQuery): CloudflareQuery {
 export function queryForMode(stored: CloudflareQuery, type: QueryType): CloudflareQuery {
   const query = migrateQuery(stored);
 
-  const analyticsSql =
-    query.analyticsSql ??
-    (query.queryType === "analytics" ? query.sql : undefined) ??
-    defaultAnalyticsSQL;
-
-  const sql = query.sql || defaultSQL;
-
   const base: CloudflareQuery = {
     ...query,
     queryType: type,
-    sql,
-    analyticsSql,
+    sql: query.sql || defaultSQL,
+    analyticsSql: query.analyticsSql ?? defaultAnalyticsSQL,
     dataset: undefined,
     metrics: [],
     groupBy: [],
@@ -41,8 +36,7 @@ export function queryForMode(stored: CloudflareQuery, type: QueryType): Cloudfla
     volumeSource: undefined,
   };
 
-  if (type === "builder")
-    return { ...base, ...defaultQuery, timeField: "timestamp", sampled: true };
+  if (type === "builder") return { ...base, ...defaultQuery };
 
   if (type === "graphql")
     return {
@@ -64,4 +58,18 @@ export function queryForMode(stored: CloudflareQuery, type: QueryType): Cloudfla
     };
 
   return { ...base, format: "timeseries", scope: type === "analytics" ? "account" : base.scope };
+}
+
+export function defaultMetric(dataset: Dataset | undefined, alias: string): Metric {
+  const states = dataset?.kind?.states;
+
+  return {
+    aggregation: states?.valid_aggregations[0] ?? "count",
+    field: states
+      ? (dataset?.columns?.find(
+          (column) => /^(U?Int|Float)/.test(column.data_type) && column.name !== "sampleInterval",
+        )?.name ?? "")
+      : "",
+    alias,
+  };
 }

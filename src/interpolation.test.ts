@@ -172,6 +172,6 @@ describe("log context", () => {
     expect(target.dataset).toBe("logs.containerLogs");
     expect(target.scope).toBe("account");
     expect(target.filters).toEqual([{ field: "containerId", operator: "=", value: "container" }]);
-    expect(target.columns).toContain("containerId");
+    expect(target.columns).toEqual([]);
   });
 });

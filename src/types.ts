@@ -93,6 +93,12 @@ export const defaultQuery: Partial<CloudflareQuery> = {
   metrics: [{ aggregation: "count", field: "", alias: "requests" }],
   groupBy: ["scriptName"],
   filters: [],
+  columns: [],
+  timeField: "timestamp",
+  sampled: true,
+  traceId: "",
+  logVolume: false,
+  volumeSource: undefined,
   limit: 1000,
 };
 
