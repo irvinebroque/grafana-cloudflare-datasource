@@ -174,7 +174,9 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 				if field.Config == nil {
 					field.Config = &data.FieldConfig{}
 				}
-				field.Config.SetFilterable(q.Format == "logs" && (q.QueryType == "builder" || q.QueryType == "") && identifier.MatchString(field.Name) && field.Type() == data.FieldTypeNullableString && field.Name != "attributes")
+				if field.Config.Filterable == nil {
+					field.Config.SetFilterable(false)
+				}
 				if field.Name == "traceId" && uid != "" {
 					field.Config.Links = []data.DataLink{{Title: "View trace", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "builder", "dataset": "logs.traces", "format": "traces", "traceId": "${__value.raw}", "accountId": q.AccountID, "scope": "account", "limit": 10000}}}}
 				}
@@ -236,13 +238,19 @@ func tableFrame(rows []map[string]any, q Query, refID string, columns []resultCo
 			continue
 		}
 		values := make([]*string, len(rows))
+		filterable := q.Format == "logs" && (q.QueryType == "builder" || q.QueryType == "") && identifier.MatchString(key) && key != "attributes"
 		for i, row := range rows {
 			if row[key] != nil {
+				if _, ok := row[key].(string); !ok {
+					filterable = false
+				}
 				s := textValue(row[key])
 				values[i] = &s
 			}
 		}
-		frame.Fields = append(frame.Fields, data.NewField(key, nil, values))
+		field := data.NewField(key, nil, values)
+		field.Config = (&data.FieldConfig{}).SetFilterable(filterable)
+		frame.Fields = append(frame.Fields, field)
 	}
 	return frame
 }

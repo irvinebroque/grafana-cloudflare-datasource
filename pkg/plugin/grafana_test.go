@@ -58,7 +58,7 @@ func TestEnvelopeFailureAndTimeoutAreDownstreamErrors(t *testing.T) {
 }
 
 func TestLogFieldFilteringPreservesTraceLinks(t *testing.T) {
-	result, _ := decodeSQL([]byte(`{"data":[{"timestamp":"2026-11-10T09:01:00Z","message":"hello","level":"info","traceId":"trace","attributes":{"key":"value"},"cpuTimeUs":5}]}`))
+	result, _ := decodeSQL([]byte(`{"data":[{"timestamp":"2026-11-10T09:01:00Z","message":"hello","level":"info","traceId":"trace","attributes":{"key":"value"},"array":["value"],"cpuTimeUs":5}]}`))
 	for _, mode := range []string{"builder", "sql", "telemetry"} {
 		frames, err := resultFrames(result, Query{QueryType: mode, Format: "logs"}, "A", "source", "SELECT", 100)
 		if err != nil {
@@ -73,6 +73,27 @@ func TestLogFieldFilteringPreservesTraceLinks(t *testing.T) {
 				t.Error("filter metadata removed trace link")
 			}
 		}
+	}
+}
+
+func TestMalformedUpstreamResponsesKeepDownstreamSource(t *testing.T) {
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{}`) })
+	for _, query := range []Query{
+		{QueryType: "sql", SQL: "SELECT 1"},
+		{QueryType: "analytics", AnalyticsSQL: "SELECT 1"},
+		{QueryType: "graphql", GraphQL: "{ viewer { accounts { id } } }"},
+		{QueryType: "telemetry", Telemetry: "{}"},
+	} {
+		response := d.query(context.Background(), backend.PluginContext{}, dataQuery(query))
+		if response.Status != backend.StatusBadGateway || response.ErrorSource != backend.ErrorSourceDownstream {
+			t.Errorf("%s misclassified malformed upstream body: %+v", query.QueryType, response)
+		}
+	}
+	var status int
+	sender := backend.CallResourceResponseSenderFunc(func(response *backend.CallResourceResponse) error { status = response.Status; return nil })
+	d.CallResource(context.Background(), &backend.CallResourceRequest{Method: "GET", Path: "accounts", URL: "/accounts"}, sender)
+	if status != 502 {
+		t.Errorf("malformed resource list returned %d", status)
 	}
 }
 

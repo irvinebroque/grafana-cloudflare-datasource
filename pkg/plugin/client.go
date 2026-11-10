@@ -56,7 +56,7 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 			return nil, backend.DownstreamError(fmt.Errorf("read Cloudflare response: %w", readErr))
 		}
 		if len(data) > maxResponseBytes {
-			return nil, fmt.Errorf("Cloudflare response exceeds 32 MiB; reduce the time range or row limit")
+			return nil, backend.DownstreamError(fmt.Errorf("Cloudflare response exceeds 32 MiB; reduce the time range or row limit"))
 		}
 		if (resp.StatusCode == 429 || resp.StatusCode == 502 || resp.StatusCode == 503 || resp.StatusCode == 504) && attempt < 2 {
 			delay := time.Duration(attempt+1) * 200 * time.Millisecond

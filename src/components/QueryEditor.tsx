@@ -488,7 +488,9 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
                     aria-label={`Filter value ${index + 1}`}
                     width={32}
                     value={filter.value}
-                    onChange={(event) => changeFilter(index, { value: event.currentTarget.value })}
+                    onChange={(event) =>
+                      changeFilter(index, { value: event.currentTarget.value, literal: undefined })
+                    }
                   />
                 </Field>
               )}

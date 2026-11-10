@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { interpolateQuery } from "./interpolation";
 import { queryHasFilter, toggleQueryFilter } from "./queryFilters";
 import { queryDisplayText } from "./queryDisplay";
 import { defaultMetric, isNumericType } from "./queryState";
@@ -15,13 +16,17 @@ const query: CloudflareQuery = {
 
 describe("Explore filters", () => {
   it("toggles literal include/exclude values without altering other filters or the source query", () => {
-    const options = { key: "message", value: "a' OR 1=1 --" };
+    const options = { key: "message", value: "$worker a' OR 1=1 --" };
     const included = toggleQueryFilter(query, { type: "FILTER_FOR", options });
 
     expect(queryHasFilter(included, options)).toBe(true);
+    expect(
+      interpolateQuery(included, (value) => value.replace("$worker", "expanded")).filters?.[1]
+        ?.value,
+    ).toBe(options.value);
     expect(included.filters).toEqual([
       ...query.filters!,
-      { field: "message", operator: "=", value: options.value },
+      { field: "message", operator: "=", value: options.value, literal: true },
     ]);
     expect(toggleQueryFilter(included, { type: "FILTER_FOR", options }).filters).toEqual(
       query.filters,
@@ -32,7 +37,7 @@ describe("Explore filters", () => {
     expect(queryHasFilter(excluded, options)).toBe(false);
     expect(excluded.filters).toEqual([
       ...query.filters!,
-      { field: "message", operator: "!=", value: options.value },
+      { field: "message", operator: "!=", value: options.value, literal: true },
     ]);
     expect(toggleQueryFilter(excluded, { type: "FILTER_OUT", options }).filters).toEqual(
       query.filters,
@@ -53,6 +58,16 @@ describe("Explore filters", () => {
       toggleQueryFilter(sql, { type: "FILTER_FOR", options: { key: "message", value: "value" } }),
     ).toBe(sql);
     expect(queryHasFilter(sql, { key: "scriptName", value: "worker" })).toBe(false);
+
+    const templated = {
+      ...query,
+      filters: [{ field: "scriptName", operator: "=", value: "$worker" }],
+    };
+
+    const options = { key: "scriptName", value: "$worker" };
+
+    expect(queryHasFilter(templated, options)).toBe(false);
+    expect(toggleQueryFilter(templated, { type: "FILTER_FOR", options }).filters).toHaveLength(2);
   });
 });
 

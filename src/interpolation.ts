@@ -16,6 +16,9 @@ export function interpolateQuery(
     params: replace(query.params ?? "", "json"),
     variables: replace(query.variables ?? "", "json"),
     telemetry: replace(query.telemetry ?? "", "json"),
-    filters: query.filters?.map((filter) => ({ ...filter, value: replace(filter.value, "raw") })),
+    filters: query.filters?.map((filter) => ({
+      ...filter,
+      value: filter.literal ? filter.value : replace(filter.value, "raw"),
+    })),
   };
 }

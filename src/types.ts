@@ -15,6 +15,7 @@ export interface QueryFilter {
   field: string;
   operator: string;
   value: string;
+  literal?: boolean;
 }
 
 export interface CloudflareQuery extends DataQuery {

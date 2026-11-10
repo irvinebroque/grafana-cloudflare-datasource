@@ -201,6 +201,9 @@ func (d *Datasource) sqlQuery(ctx context.Context, q Query, dq backend.DataQuery
 		return SQLResult{}, sql, err
 	}
 	result, err := decodeSQL(response)
+	if err != nil {
+		err = backend.DownstreamError(err)
+	}
 	return result, sql, err
 }
 
@@ -273,7 +276,7 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		body, err = d.client.request(ctx, http.MethodGet, path, nil)
 	}
 	if err != nil {
-		return sendResourceError(sender, int(queryError(err).Status), err.Error())
+		return sendResourceError(sender, int(queryError(backend.DownstreamError(err)).Status), err.Error())
 	}
 	d.mu.Lock()
 	for key, cached := range d.cache {
@@ -324,13 +327,13 @@ func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQ
 		} `json:"errors"`
 	}
 	if err = decodeJSON(body, &envelope); err != nil {
-		return SQLResult{}, q.GraphQL, err
+		return SQLResult{}, q.GraphQL, backend.DownstreamError(err)
 	}
 	if len(envelope.Errors) > 0 {
-		return SQLResult{}, q.GraphQL, fmt.Errorf("Cloudflare GraphQL: %s", envelope.Errors[0].Message)
+		return SQLResult{}, q.GraphQL, backend.DownstreamError(&cloudflareAPIError{status: backend.StatusBadRequest, message: "Cloudflare GraphQL: " + envelope.Errors[0].Message})
 	}
 	if envelope.Data == nil {
-		return SQLResult{}, q.GraphQL, fmt.Errorf("Cloudflare GraphQL returned no data object")
+		return SQLResult{}, q.GraphQL, backend.DownstreamError(fmt.Errorf("Cloudflare GraphQL returned no data object"))
 	}
 	rows, err := selectRows(envelope.Data, q.DataPath)
 	return SQLResult{Data: rows}, q.GraphQL, err
@@ -353,6 +356,9 @@ func (d *Datasource) analyticsQuery(ctx context.Context, q Query, dq backend.Dat
 		return SQLResult{}, sql, err
 	}
 	result, err := decodeSQL(body)
+	if err != nil {
+		err = backend.DownstreamError(err)
+	}
 	return result, sql, err
 }
 
@@ -376,10 +382,10 @@ func (d *Datasource) telemetryQuery(ctx context.Context, q Query, dq backend.Dat
 		Result any `json:"result"`
 	}
 	if err = decodeJSON(response, &envelope); err != nil {
-		return SQLResult{}, q.Telemetry, err
+		return SQLResult{}, q.Telemetry, backend.DownstreamError(err)
 	}
 	if envelope.Result == nil {
-		return SQLResult{}, q.Telemetry, fmt.Errorf("Cloudflare telemetry returned no result object")
+		return SQLResult{}, q.Telemetry, backend.DownstreamError(fmt.Errorf("Cloudflare telemetry returned no result object"))
 	}
 	rows, err := selectRows(envelope.Result, q.DataPath)
 	for _, row := range rows {

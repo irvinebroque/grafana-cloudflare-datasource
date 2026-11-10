@@ -1,5 +1,5 @@
 import type { QueryFilterOptions, ToggleFilterAction } from "@grafana/data";
-import type { CloudflareQuery } from "./types";
+import type { CloudflareQuery, QueryFilter } from "./types";
 
 function canFilter(query: CloudflareQuery, key: string | undefined) {
   return (
@@ -12,13 +12,18 @@ function canFilter(query: CloudflareQuery, key: string | undefined) {
   );
 }
 
+function matches(filter: QueryFilter, options: QueryFilterOptions): boolean {
+  return (
+    filter.field === options.key &&
+    filter.value === options.value &&
+    (filter.literal === true || !filter.value.includes("$"))
+  );
+}
+
 export function queryHasFilter(query: CloudflareQuery, options: QueryFilterOptions): boolean {
   return (
     canFilter(query, options.key) &&
-    (query.filters ?? []).some(
-      (filter) =>
-        filter.field === options.key && filter.operator === "=" && filter.value === options.value,
-    )
+    (query.filters ?? []).some((filter) => matches(filter, options) && filter.operator === "=")
   );
 }
 
@@ -34,18 +39,16 @@ export function toggleQueryFilter(
   const filters = query.filters ?? [];
 
   const exists = filters.some(
-    (filter) => filter.field === key && filter.operator === operator && filter.value === value,
+    (filter) => matches(filter, action.options) && filter.operator === operator,
   );
 
   const remaining = filters.filter(
     (filter) =>
-      filter.field !== key ||
-      filter.value !== value ||
-      (filter.operator !== "=" && filter.operator !== "!="),
+      !matches(filter, action.options) || (filter.operator !== "=" && filter.operator !== "!="),
   );
 
   return {
     ...query,
-    filters: exists ? remaining : [...remaining, { field: key, operator, value }],
+    filters: exists ? remaining : [...remaining, { field: key, operator, value, literal: true }],
   };
 }
