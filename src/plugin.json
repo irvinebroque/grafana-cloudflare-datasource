@@ -31,7 +31,7 @@
         "url": "https://developers.cloudflare.com/analytics/sql-api/"
       }
     ],
-    "version": "0.1.1",
+    "version": "0.1.2",
     "updated": "2026-11-10"
   },
   "dependencies": {

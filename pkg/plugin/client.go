@@ -45,7 +45,7 @@ func (c *client) request(ctx context.Context, method, path string, body any) ([]
 		req.Header.Set("Authorization", "Bearer "+c.token)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "grafana-cloudflare-datasource/0.1.1")
+		req.Header.Set("User-Agent", "grafana-cloudflare-datasource/0.1.2")
 		resp, err := c.http.Do(req)
 		if err != nil {
 			return nil, backend.DownstreamError(fmt.Errorf("Cloudflare request failed: %w", err))
