@@ -1,0 +1,130 @@
+{
+  "uid": "cloudflare-traces",
+  "title": "Cloudflare traces",
+  "schemaVersion": 41,
+  "version": 1,
+  "tags": ["cloudflare", "traces"],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "description": "Inspect retained Cloudflare spans with Grafana\u2019s native trace viewer. Select a trace ID or click a recent trace. Upstream spans outside Cloudflare require a shared OpenTelemetry backend.",
+  "templating": {
+    "list": [
+      {
+        "name": "traceId",
+        "label": "Trace ID",
+        "type": "query",
+        "datasource": {
+          "type": "cloudflare-cloudflare-datasource",
+          "uid": "${DS_CLOUDFLARE}"
+        },
+        "query": {
+          "refId": "VariableQuery",
+          "queryType": "sql",
+          "format": "table",
+          "sql": "SELECT traceId AS __text, traceId AS __value, APPROX_MIN(startTime) AS firstSeen FROM logs.traces GROUP BY traceId ORDER BY firstSeen DESC LIMIT 100"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Recent traces",
+      "type": "table",
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "traces",
+          "dataset": "logs.traces",
+          "limit": 30
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traceId"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Inspect trace",
+                    "url": "/d/cloudflare-traces/cloudflare-traces?${__url_time_range}&var-traceId=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 2,
+      "title": "Trace \u00b7 $traceId",
+      "type": "traces",
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "traces",
+          "dataset": "logs.traces",
+          "limit": 10000,
+          "traceId": "$traceId"
+        }
+      ],
+      "options": {}
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_CLOUDFLARE",
+      "label": "Cloudflare",
+      "type": "datasource",
+      "pluginId": "cloudflare-cloudflare-datasource",
+      "pluginName": "Cloudflare"
+    }
+  ]
+}

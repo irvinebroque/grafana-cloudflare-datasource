@@ -104,9 +104,10 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 		}
 	}
 	if format == "traces" {
-		selectParts = []string{"traceId", "spanId", "parentSpanId", "serviceName", "spanName", "startTime", "durationMs", "spanStatus", "attributes"}
+		selectParts = []string{"traceId", "spanId", "parentSpanId", "serviceName", "spanName", "startTime", "durationMs", "spanStatus", "spanStatusMessage", "error", "attributes"}
 		if q.TraceID == "" {
-			selectParts = []string{"traceId", "serviceName", "spanName", "startTime", "durationMs", "spanStatus"}
+			selectParts = []string{"traceId", "topK(5)(serviceName) AS services", "topK(5)(spanName) AS operations", "APPROX_MIN(startTime) AS startTime", "APPROX_MAX(durationMs) AS maxSpanDurationMs", "if(countIf(spanStatus = 'error') > 0, 'error', 'unset') AS spanStatus", "count() AS estimatedSpans"}
+			groupParts = []string{"traceId"}
 		}
 	} else if format == "logs" || (len(columns) > 0 && len(q.Metrics) == 0) {
 		for _, name := range columns {
@@ -178,9 +179,6 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 		}
 	}
 	var filters []string
-	if format == "traces" && q.TraceID == "" {
-		filters = append(filters, "parentSpanId = ''")
-	}
 	for i, f := range q.Filters {
 		col, err := fieldSQL(f.Field)
 		if err != nil {

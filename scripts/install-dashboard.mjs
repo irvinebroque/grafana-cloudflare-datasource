@@ -1,15 +1,15 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { datasourceUID, grafanaRequest, grafanaURL } from "./grafana.mjs";
 
-const dashboard = JSON.parse(
-  (await readFile("src/dashboards/cloudflare-overview.json", "utf8")).replaceAll(
-    "${DS_CLOUDFLARE}",
-    datasourceUID,
-  ),
-);
+for (const file of (await readdir("src/dashboards")).filter((name) => name.endsWith(".json"))) {
+  const dashboard = JSON.parse(
+    (await readFile(`src/dashboards/${file}`, "utf8")).replaceAll(
+      "${DS_CLOUDFLARE}",
+      datasourceUID,
+    ),
+  );
 
-delete dashboard.__inputs;
-
-await grafanaRequest("/api/dashboards/db", { dashboard, overwrite: true });
-
-console.log(`Imported ${grafanaURL}/d/cloudflare-overview/cloudflare-overview`);
+  delete dashboard.__inputs;
+  const result = await grafanaRequest("/api/dashboards/db", { dashboard, overwrite: true });
+  console.log(`Imported ${grafanaURL}${result.url}`);
+}

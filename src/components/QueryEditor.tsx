@@ -17,6 +17,7 @@ import {
   type ResultFormat,
 } from "../types";
 import { getTemplateSrv } from "@grafana/runtime";
+import { GraphQLBuilder } from "./GraphQLBuilder";
 import { QueryCodeEditor } from "./QueryCodeEditor";
 import { sqlSuggestions } from "../sqlSuggestions";
 import { presets } from "../presets";
@@ -31,6 +32,11 @@ const queryTypes: Array<SelectableValue<QueryType>> = [
     description: "Discover datasets and build parameterized SQL",
   },
   { label: "SQL", value: "sql", description: "Cloudflare SQL API (beta)" },
+  {
+    label: "GraphQL builder",
+    value: "graphql-builder",
+    description: "Discover analytics across Cloudflare products",
+  },
   { label: "GraphQL", value: "graphql", description: "Cloudflare GraphQL Analytics API" },
   {
     label: "Analytics Engine SQL",
@@ -77,6 +83,9 @@ const rowStyle: React.CSSProperties = {
 
 export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }: Props) {
   const query = migrateQuery({ ...defaultQuery, ...stored });
+
+  if (stored.queryType === "graphql-builder") query.timeField = stored.timeField ?? "";
+
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -86,6 +95,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
   const update = (change: Partial<CloudflareQuery>) => onChange({ ...query, ...change });
 
   useEffect(() => {
+    if (query.queryType === "graphql-builder") return;
     let active = true;
     setLoading(true);
     setError("");
@@ -104,7 +114,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
     return () => {
       active = false;
     };
-  }, [datasource, query.accountId, refresh]);
+  }, [datasource, query.accountId, query.queryType, refresh]);
 
   const dataset = datasets.find((entry) => entry.name === query.dataset);
 
@@ -145,24 +155,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
       groupBy: [],
       filters: [],
       traceId: "",
-      columns:
-        isLog && name !== "logs.workersLogs"
-          ? entry?.columns?.flatMap((column) =>
-              [
-                "timestamp",
-                "message",
-                "level",
-                "serviceName",
-                "traceId",
-                "spanId",
-                "containerId",
-                "placementId",
-                "id",
-              ].includes(column.name)
-                ? [column.name]
-                : [],
-            )
-          : [],
+      columns: [],
     });
   };
 
@@ -229,7 +222,22 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
               { label: "Account", value: "account" },
               { label: "Zone", value: "zone" },
             ]}
-            onChange={(value) => update({ scope: value.value === "zone" ? "zone" : "account" })}
+            onChange={(value) => {
+              const scope = value.value === "zone" ? "zone" : "account";
+
+              if (query.queryType === "graphql-builder") {
+                update({
+                  scope,
+                  dataset: undefined,
+                  columns: [],
+                  groupBy: [],
+                  filters: [],
+                  timeField: "",
+                });
+              } else {
+                update({ scope });
+              }
+            }}
           />
         </Field>
         <Field label="Account" description="Uses the configured default when empty.">
@@ -636,6 +644,9 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           </div>
         </>
       )}
+      {query.queryType === "graphql-builder" && (
+        <GraphQLBuilder query={query} datasource={datasource} onChange={update} />
+      )}
       {query.queryType === "graphql" && (
         <>
           <Field
@@ -700,7 +711,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           />
         </Field>
       )}
-      {query.queryType !== "builder" && (
+      {query.queryType !== "builder" && query.queryType !== "graphql-builder" && (
         <Field
           label="Series dimensions"
           description="Comma-separated result columns to use as labels, including numeric dimensions."
@@ -718,16 +729,18 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           />
         </Field>
       )}
-      <Field
-        label="Time column"
-        description="Timestamp column for time series and logs. Nested GraphQL fields use dot notation."
-      >
-        <Input
-          aria-label="Time column"
-          value={query.timeField ?? ""}
-          onChange={(event) => update({ timeField: event.currentTarget.value })}
-        />
-      </Field>
+      {query.queryType !== "graphql-builder" && (
+        <Field
+          label="Time column"
+          description="Timestamp column for time series and logs. Nested GraphQL fields use dot notation."
+        >
+          <Input
+            aria-label="Time column"
+            value={query.timeField ?? ""}
+            onChange={(event) => update({ timeField: event.currentTarget.value })}
+          />
+        </Field>
+      )}
       <div style={rowStyle}>
         <Button icon="play" onClick={onRunQuery}>
           Run Cloudflare query

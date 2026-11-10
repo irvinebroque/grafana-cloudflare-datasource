@@ -6,6 +6,8 @@ export function queryDisplayText(query: CloudflareQuery): string {
       return query.sql ?? "";
     case "analytics":
       return query.analyticsSql ?? query.sql ?? "";
+    case "graphql-builder":
+      return [query.dataset ?? "", ...(query.columns ?? []), ...(query.groupBy ?? [])].join(" · ");
     case "graphql":
       return query.graphql ?? "";
     case "telemetry":

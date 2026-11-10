@@ -2,10 +2,10 @@
 
 Query and visualize Cloudflare metrics, logs, traces, and analytics in Grafana.
 
-- **Metrics:** Workers, HTTP traffic, D1, R2, KV, Queues, Workers AI, and more.
-- **Logs:** Search Workers and Containers logs, view context, and chart log volume.
-- **Traces:** Search traces and open span waterfalls directly from logs.
-- **Dashboards:** Use variables, annotations, alerts, and the included Cloudflare overview dashboard.
+- **Metrics:** Discover Cloudflare SQL and GraphQL analytics across compute, storage, AI, networking, security, and media.
+- **Logs:** Search catalog-discovered log datasets with native Explore rendering and log volume. Workers and Containers also support surrounding context.
+- **Traces:** Use Grafana’s native waterfall, node graph, span filters, critical path, and links between logs and traces.
+- **Dashboards:** Use variables, annotations, alerts, and the included overview and trace dashboards.
 
 ```mermaid
 flowchart LR
@@ -68,7 +68,7 @@ allow_loading_unsigned_plugins = cloudflare-cloudflare-datasource
 2. Select **Cloudflare**.
 3. Enter your **API token** and **Default account ID**. Optionally add a default zone ID.
 4. Click **Save & test**.
-5. Open the data source's **Dashboards** tab and import **Cloudflare overview**.
+5. Open the data source's **Dashboards** tab and import **Cloudflare overview** and **Cloudflare traces**.
 
 Grafana encrypts the saved token. Cloudflare API requests run through the plugin backend.
 
@@ -80,15 +80,23 @@ Grafana encrypts the saved token. Cloudflare API requests run through the plugin
 2. Choose an example from **Start with**, or select a dataset and add metrics and filters.
 3. Choose a time range and click **Run Cloudflare query**.
 
-| What you want      | Example                     |
-| ------------------ | --------------------------- |
-| Requests by Worker | Workers · requests          |
-| CPU time           | Workers · p99 CPU time (µs) |
-| D1 query latency   | D1 · query latency (ms)     |
-| R2 operations      | R2 · operations             |
-| Worker logs        | Workers · logs              |
-| Container logs     | Containers · logs           |
-| Trace search       | Workers · distributed trace |
+| What you want      | Example                        |
+| ------------------ | ------------------------------ |
+| Requests by Worker | Workers · requests             |
+| CPU time           | Workers · p99 CPU time (µs)    |
+| D1 query latency   | D1 · query latency (ms)        |
+| R2 operations      | R2 · operations                |
+| Worker logs        | Workers · logs                 |
+| Container logs     | Containers · logs              |
+| Trace search       | Cloudflare · distributed trace |
+
+### Discover analytics across Cloudflare
+
+Choose **GraphQL builder**, then select an account or zone and an **Analytics dataset**. Search the provider’s schema for DNS, DNS Firewall, Containers, Durable Objects, AI Gateway, AI Search, Gateway, firewall events, Load Balancing, Health Checks, and other products.
+
+Select metrics, dimensions, and filters. The editor checks the selected scope’s availability and field permissions, shows query-range and retention limits, and chooses a supported time bucket for Grafana’s panel interval. Filters use typed variables. Provider aggregates and quantiles retain their original semantics.
+
+The catalog excludes deprecated and staging nodes. Availability depends on your account, zone, token, plan, and retained data. For nested Boolean filters, fields with arguments, or other advanced selections, use **GraphQL** and set its result path. See the [coverage record](docs/COVERAGE.md).
 
 ### Write SQL
 
@@ -118,25 +126,25 @@ Set **SQL parameters** to:
 
 ### Explore logs and traces
 
-- Choose **Workers · logs** or **Containers · logs** to search logs and view surrounding context.
-- In builder log details, use the filter buttons to include or exclude a field value. The builder shows the resulting filter.
-- In Worker log details, click **View trace** to open the matching waterfall.
-- Choose **Workers · distributed trace** to search traces, or paste a **Trace ID**.
+- Select a log dataset to use Grafana’s native log viewer. The builder discovers its timestamp and columns. Events without a `message` use a body/error/event field, or their structured JSON. Original fields remain available in log details; the plugin does not invent log severity.
+- Workers and Containers support surrounding context and volume by level. Other log datasets support total volume without assuming a `level` column.
+- In Worker log details, click **View trace**. In a span’s details, click **Related Worker logs** to return to matching logs.
+- Choose **Cloudflare · distributed trace** to search retained traces, or paste a **Trace ID**.
+- In Explore, expand **Node graph** to inspect span relationships. Use the native waterfall’s attribute/text filters, error and high-latency filters, critical path, and span details.
+- Import **Cloudflare traces** for a two-panel dashboard: recent traces and the selected native trace waterfall. Choose a trace ID or click one in the table.
 
-```mermaid
-flowchart LR
-    Logs[Worker logs] --> Details[Log details]
-    Details -->|View trace| Trace[Trace waterfall]
-    Trace --> Spans[Inspect spans and attributes]
-```
+Tracing uses the shared Cloudflare trace schema across products. It does not depend on Worker-only span names or a root with an empty parent ID. The graph connects retained spans; it is not an aggregate service map. Search reports the largest observed span duration and estimated span count, rather than an exact end-to-end duration.
+
+Cloudflare sampling and retention can leave missing spans. Spans produced outside Cloudflare require exporting participating services to a shared OpenTelemetry backend such as Tempo. Grafana’s Tempo-specific Traces Drilldown needs that backend; the native viewer above works directly with this plugin. See [Cloudflare tracing](https://developers.cloudflare.com/observability/traces/) and [Grafana trace integration](https://grafana.com/docs/grafana/latest/visualizations/explore/trace-integration/).
 
 ### Use other Cloudflare APIs
 
-| Query language           | How to use it                                                                                                                                       |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **GraphQL**              | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries. |
-| **Workers telemetry**    | Paste a Query Builder request; use `events.events` as the result path for logs.                                                                     |
-| **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.                                                                         |
+| Query language           | How to use it                                                                                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GraphQL builder**      | Discover analytics datasets, fields, filters, availability, and time buckets for the selected account or zone.                                                 |
+| **GraphQL**              | Start with the included Workers query; set the result data path and time column. Set an operation name when the document contains multiple queries.            |
+| **Workers telemetry**    | Requires [Workers Observability Write](docs/PERMISSIONS.md#workers-telemetry). Paste a Query Builder request; use `events.events` as the result path for logs. |
+| **Analytics Engine SQL** | Replace `your_dataset` in the starter query; keep its explicit time filter.                                                                                    |
 
 ## Run locally with Docker
 

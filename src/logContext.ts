@@ -55,7 +55,7 @@ export function volumeTarget(original: CloudflareQuery): CloudflareQuery | undef
     original.hide ||
     (original.queryType ?? "builder") !== "builder" ||
     original.format !== "logs" ||
-    !["logs.workersLogs", "logs.containerLogs"].includes(original.dataset ?? "")
+    !original.dataset?.startsWith("logs.")
   )
     return undefined;
 
@@ -64,9 +64,9 @@ export function volumeTarget(original: CloudflareQuery): CloudflareQuery | undef
     refId: `log-volume-${original.refId}`,
     format: "timeseries",
     metrics: [{ aggregation: "count", field: "", alias: "logs" }],
-    groupBy: ["level"],
+    groupBy: ["logs.workersLogs", "logs.containerLogs"].includes(original.dataset) ? ["level"] : [],
     columns: [],
-    timeField: "timestamp",
+    timeField: original.timeField || "timestamp",
     limit: 10000,
     logVolume: true,
     volumeSource: original,

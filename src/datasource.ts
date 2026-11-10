@@ -20,6 +20,7 @@ import { contextRange, contextTarget, volumeTarget } from "./logContext";
 import { DataSourceWithBackend, getTemplateSrv } from "@grafana/runtime";
 import {
   catalogSchema,
+  graphCatalogSchema,
   defaultQuery,
   resourceSchema,
   type CloudflareOptions,
@@ -201,6 +202,18 @@ export class DataSource
     });
 
     return catalogSchema.parse(response).datasets;
+  }
+
+  async graphDatasets(query: CloudflareQuery, dataset?: string, refresh = false) {
+    const response = await this.getResource("graphql-datasets", {
+      scope: query.scope ?? "account",
+      accountId: getTemplateSrv().replace(query.accountId ?? ""),
+      zoneId: getTemplateSrv().replace(query.zoneId ?? ""),
+      dataset,
+      refresh,
+    });
+
+    return graphCatalogSchema.parse(response).datasets;
   }
 
   async accounts() {

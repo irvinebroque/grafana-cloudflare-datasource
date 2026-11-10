@@ -38,6 +38,16 @@ export function queryForMode(stored: CloudflareQuery, type: QueryType): Cloudfla
 
   if (type === "builder") return { ...base, ...defaultQuery };
 
+  if (type === "graphql-builder")
+    return {
+      ...base,
+      scope: "account",
+      dataset: "workersInvocationsAdaptive",
+      format: "timeseries",
+      columns: ["sum.requests"],
+      groupBy: ["dimensions.scriptName"],
+    };
+
   if (type === "graphql")
     return {
       ...base,

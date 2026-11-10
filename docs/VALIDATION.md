@@ -2,6 +2,18 @@
 
 Version **0.1.1** validated on 10 November 2026 against a real Cloudflare account with existing traffic. No synthetic Worker or billable resource was deployed. See the [bug audit](AUDIT.md) for corrected defects and dependency findings.
 
+## Platform analytics and native trace follow-up
+
+The 10 November follow-up passed `vp check --deny-warnings`, all 15 frontend tests, Go race tests, the plugin build, `go vet`, and all **14 real-account browser tests**. The browser suite now checks shared GraphQL discovery, a nonempty metric query, the two-panel native Traces dashboard, Explore’s node graph, and the span-to-log link. The live core validator passed **16/16** checks, including a retained **11-span trace** returned as the native trace, nodes, and edges frames. The validator now chooses a trace ID from retained trace search and requires nonempty trace frames; an empty trace no longer passes full-trace validation.
+
+GraphQL introspection discovered **230 account and 60 zone datasets**, excluding deprecated and staging nodes. Across **35 discovered analytics targets**, **13 returned real data**, **14 succeeded empty**, and **8 were disabled** for the selected account/zone/token. Nonempty results covered Workers, Durable Objects periodic and SQL storage, Pages Functions, AI Gateway requests, Queues backlog and operations, DNS, HTTP variants, Spectrum, DDoS, and audit analytics. Containers, AI Search, Access, Gateway, DNS Firewall, Tunnel, and some storage/Logpush queries returned empty results; this establishes compatibility, not populated product validation. A probe using an obsolete Spectrum node name was rejected by catalog validation; the discovered account-scoped Spectrum node returned real data.
+
+The broader native log path returned nonempty Email Routing and issue events using discovered timestamps/columns and a canonical display message. Sinkhole and storage-tracing log queries succeeded empty. Alternate timestamp/body schemas, absent severity, structured-field preservation, typed GraphQL filters, 64-bit integer precision, account availability/field/range/row limits, external trace parents, OTel status, graph deduplication, and native links also have synthetic fixture tests. Fixture data is not represented as real Cloudflare evidence.
+
+Manual Grafana validation confirmed a native waterfall containing HTTP/cache/policy/framework and D1 operations, the native per-trace span graph, and a span link that returned matching Worker logs. These observed operation names are examples, not a parser allowlist. The trace dashboard contains only recent traces and the selected native waterfall. No resources were deployed or permissions expanded. Private account captures and credentials remain ignored in `.local/`.
+
+The integration does not retrieve external spans or reconstruct sampling gaps. Operational REST inventory, direct Audit Logs v2 events, organization APIs, Radar, and host-local Prometheus collection remain explicit boundaries in [coverage](COVERAGE.md).
+
 ## Environment
 
 - Grafana Enterprise 13.3.0, using its standard datasource/Explore/dashboard/alerting capabilities.

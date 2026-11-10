@@ -121,6 +121,21 @@ func numericColumn(rows []map[string]any, column resultColumn) bool {
 
 func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRows int) (data.Frames, error) {
 	rows := result.Data
+	if q.Format == "logs" {
+		rows = logRows(rows)
+		// Include the canonical display message alongside the provider fields.
+		if len(rows) > 0 {
+			found := false
+			for _, column := range result.Meta {
+				if column.Name == "message" {
+					found = true
+				}
+			}
+			if len(result.Meta) > 0 && !found {
+				result.Meta = append(append([]resultColumn{}, result.Meta...), resultColumn{Name: "message", Type: "String"})
+			}
+		}
+	}
 	truncated := len(rows) > maxRows
 	if truncated {
 		rows = rows[:maxRows]
@@ -142,6 +157,9 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 			frames = data.Frames{tableFrame(rows, q, refID, columns)}
 		} else {
 			frames, err = traceFrames(rows, refID)
+			if err == nil && len(rows) > 0 {
+				frames = append(frames, traceGraph(frames[0], refID)...)
+			}
 		}
 	case "timeseries", "":
 		frames, err = seriesFrames(rows, q, refID, columns)
@@ -159,8 +177,11 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 			frame.Meta.ExecutedQueryString = executed
 		}
 		frame.Meta.Custom = map[string]any{"statistics": result.Statistics, "rows": len(rows), "accountId": q.AccountID, "zoneId": q.ZoneID, "dataset": q.Dataset}
+		if frame.Meta.PreferredVisualization == data.VisTypeTrace && uid != "" {
+			frame.Fields[0].Config = &data.FieldConfig{Links: []data.DataLink{{Title: "Related Worker logs", URL: "", Internal: &data.InternalDataLink{DatasourceUID: uid, Query: map[string]any{"queryType": "builder", "dataset": "logs.workersLogs", "format": "logs", "accountId": q.AccountID, "scope": "account", "filters": []map[string]any{{"field": "traceId", "operator": "=", "value": "${__value.raw}", "literal": true}}, "limit": 1000}}}}}
+		}
 		limit := maxRows
-		if q.QueryType == "builder" || q.QueryType == "" {
+		if q.QueryType == "builder" || q.QueryType == "" || q.QueryType == "graphql-builder" {
 			limit = q.rowLimit(maxRows)
 		}
 		if truncated || len(rows) >= limit {
@@ -417,60 +438,4 @@ func metricUnit(q Query, name string) string {
 	default:
 		return ""
 	}
-}
-
-func traceFrames(rows []map[string]any, refID string) (data.Frames, error) {
-	ids, spanIDs, parents, services, operations := []string{}, []string{}, []string{}, []string{}, []string{}
-	starts, durations := []float64{}, []float64{}
-	tags := []json.RawMessage{}
-	serviceTags := []json.RawMessage{}
-	for _, row := range rows {
-		id := textValue(row["traceId"])
-		if id == "" {
-			id = textValue(row["traceID"])
-		}
-		span := textValue(row["spanId"])
-		if span == "" {
-			span = textValue(row["spanID"])
-		}
-		if id == "" || span == "" {
-			return nil, fmt.Errorf("trace result requires traceId and spanId columns")
-		}
-		t, ok := timestamp(row["startTime"])
-		if !ok || t == nil {
-			return nil, fmt.Errorf("trace result requires valid startTime")
-		}
-		d, ok := number(row["durationMs"])
-		if !ok || d == nil || *d < 0 {
-			return nil, fmt.Errorf("trace result requires numeric durationMs")
-		}
-		ids = append(ids, id)
-		spanIDs = append(spanIDs, span)
-		parents = append(parents, textValue(row["parentSpanId"]))
-		services = append(services, textValue(row["serviceName"]))
-		operations = append(operations, textValue(row["spanName"]))
-		starts = append(starts, float64(t.UnixMicro())/1000)
-		durations = append(durations, *d)
-		pairs := []map[string]any{}
-		if attributes, ok := row["attributes"].(map[string]any); ok {
-			names := []string{}
-			for key := range attributes {
-				names = append(names, key)
-			}
-			sort.Strings(names)
-			for _, key := range names {
-				pairs = append(pairs, map[string]any{"key": key, "value": attributes[key]})
-			}
-		}
-		if textValue(row["spanStatus"]) == "error" {
-			pairs = append(pairs, map[string]any{"key": "error", "value": true})
-		}
-		encoded, _ := json.Marshal(pairs)
-		tags = append(tags, encoded)
-		serviceTags = append(serviceTags, json.RawMessage(`[]`))
-	}
-	frame := data.NewFrame(refID, data.NewField("traceID", nil, ids), data.NewField("spanID", nil, spanIDs), data.NewField("parentSpanID", nil, parents), data.NewField("serviceName", nil, services), data.NewField("operationName", nil, operations), data.NewField("startTime", nil, starts), data.NewField("duration", nil, durations), data.NewField("tags", nil, tags), data.NewField("serviceTags", nil, serviceTags))
-	frame.RefID = refID
-	frame.Meta = &data.FrameMeta{PreferredVisualization: data.VisTypeTrace}
-	return data.Frames{frame}, nil
 }

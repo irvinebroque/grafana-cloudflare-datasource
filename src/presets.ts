@@ -30,6 +30,23 @@ function logs(dataset: string): Partial<CloudflareQuery> {
   };
 }
 
+function graphMetric(
+  dataset: string,
+  column: string,
+  groupBy: string[] = [],
+): Partial<CloudflareQuery> {
+  return {
+    ...defaultQuery,
+    queryType: "graphql-builder",
+    dataset,
+    scope: "account",
+    timeField: "",
+    columns: [column],
+    metrics: [],
+    groupBy,
+  };
+}
+
 export const presets: Preset[] = [
   {
     label: "Workers · requests",
@@ -48,7 +65,7 @@ export const presets: Preset[] = [
     query: logs("logs.containerLogs"),
   },
   {
-    label: "Workers · distributed trace",
+    label: "Cloudflare · distributed trace",
     query: {
       ...defaultQuery,
       dataset: "logs.traces",
@@ -68,5 +85,24 @@ export const presets: Preset[] = [
   {
     label: "Workers AI · inference time (ms)",
     query: metric("events.aiInference", "inferenceTimeMs", "avg"),
+  },
+  {
+    label: "Containers · resource metrics",
+    query: graphMetric("containersMetricsAdaptiveGroups", "avg.cpuUtilization", [
+      "dimensions.applicationId",
+    ]),
+  },
+  {
+    label: "AI Gateway · requests",
+    query: graphMetric("aiGatewayRequestsAdaptiveGroups", "count", ["dimensions.gateway"]),
+  },
+  { label: "AI Search · requests", query: graphMetric("aiSearchAPIAdaptiveGroups", "count") },
+  {
+    label: "Durable Objects · SQL storage",
+    query: graphMetric("durableObjectsSqlStorageGroups", "max.storedBytes"),
+  },
+  {
+    label: "DNS · queries",
+    query: graphMetric("dnsAnalyticsAdaptiveGroups", "count", ["dimensions.queryType"]),
   },
 ];

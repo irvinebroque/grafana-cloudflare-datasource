@@ -477,5 +477,13 @@
       "pluginId": "cloudflare-cloudflare-datasource",
       "pluginName": "Cloudflare"
     }
+  ],
+  "links": [
+    {
+      "title": "Cloudflare traces",
+      "url": "/d/cloudflare-traces/cloudflare-traces",
+      "type": "link",
+      "keepTime": true
+    }
   ]
 }

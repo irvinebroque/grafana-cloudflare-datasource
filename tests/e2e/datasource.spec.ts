@@ -177,7 +177,7 @@ test("searches traces and renders an entire distributed trace", async ({ page, r
           datasource: { uid, type: "cloudflare-cloudflare-datasource" },
           queryType: "sql",
           format: "table",
-          sql: "SELECT traceId FROM logs.traces WHERE parentSpanId = '' ORDER BY startTime DESC LIMIT 1",
+          sql: "SELECT traceId FROM logs.traces ORDER BY startTime DESC LIMIT 1",
         },
       ],
     },
@@ -208,6 +208,18 @@ test("searches traces and renders an entire distributed trace", async ({ page, r
   await page.goto(`/explore?schemaVersion=1&panes=${encodeURIComponent(JSON.stringify(pane))}`);
   await expect(page.getByLabel("Trace ID")).toHaveValue(String(trace));
   await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Node graph", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "Node graph", exact: true }).getByRole("button").click();
+  await expect(page.getByRole("button", { name: "Zoom in", exact: true })).toBeVisible();
+  await page.getByRole("heading", { name: "Node graph", exact: true }).getByRole("button").click();
+  await page
+    .getByRole("switch")
+    .filter({ hasText: /GET|POST|fetch/ })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("link", { name: "Related Worker logs", exact: true }).first(),
+  ).toBeVisible();
   await page.screenshot({ path: ".local/trace-validated.png", fullPage: true });
 });
 
@@ -420,4 +432,29 @@ test("supports server-side Grafana alert evaluation", async ({ request }) => {
   expect(result.results.B?.error).toBeUndefined();
   expect(result.results.B?.frames?.length).toBeGreaterThan(0);
   expect(result.results.B?.frames?.[0]?.data.values[0]?.length).toBe(1);
+});
+
+test("discovers GraphQL analytics and renders real metrics through the shared builder", async ({
+  page,
+}) => {
+  await page.goto("/explore");
+  await page.getByLabel("Query language").click();
+  await page.getByText("GraphQL builder", { exact: true }).click();
+  await expect(
+    page.getByText("Available for this scope and token", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByLabel("GraphQL dataset")).toBeVisible();
+  const response = mainQuery(page);
+  await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+  const result = resultSchema.parse(await (await response).json());
+  expect(result.results.A?.error).toBeUndefined();
+  expect(result.results.A?.frames?.some((frame) => frame.data.values[0]?.length)).toBe(true);
+  await expect(page.getByText("Graph", { exact: true }).last()).toBeVisible();
+});
+
+test("renders the simple trace dashboard with Grafana's native viewer", async ({ page }) => {
+  await page.goto("/d/cloudflare-traces/cloudflare-traces?from=now-6h&to=now");
+  await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Recent traces", { exact: true })).toBeVisible();
+  await page.screenshot({ path: ".local/native-trace-dashboard.png", fullPage: true });
 });

@@ -43,6 +43,11 @@
       "name": "Cloudflare overview",
       "path": "dashboards/cloudflare-overview.json",
       "type": "dashboard"
+    },
+    {
+      "name": "Cloudflare traces",
+      "path": "dashboards/cloudflare-traces.json",
+      "type": "dashboard"
     }
   ]
 }

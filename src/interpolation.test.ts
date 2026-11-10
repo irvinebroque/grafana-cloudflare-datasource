@@ -127,6 +127,9 @@ describe("log context", () => {
     expect(volume?.filters).toEqual(query.filters);
     expect(volume?.volumeSource).toBe(query);
     expect(volumeTarget({ ...query, hide: true })).toBeUndefined();
+    const other = volumeTarget({ ...query, dataset: "logs.gateway", timeField: "eventTime" });
+    expect(other?.timeField).toBe("eventTime");
+    expect(other?.groupBy).toEqual([]);
   });
   it("keeps the source account and scopes context to an invocation", () => {
     const target = contextTarget(

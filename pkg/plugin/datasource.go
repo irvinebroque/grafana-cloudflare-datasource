@@ -20,6 +20,7 @@ type Datasource struct {
 	settings Settings
 	client   *client
 	mu       sync.Mutex
+	schemaMu sync.Mutex
 	cache    map[string]cacheEntry
 }
 
@@ -121,7 +122,7 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	if err != nil {
 		return queryError(err)
 	}
-	if q.QueryType != "builder" && q.QueryType != "" {
+	if q.QueryType != "builder" && q.QueryType != "" && q.QueryType != "graphql-builder" {
 		q.Dataset = ""
 	}
 	q.AccountID = account
@@ -130,7 +131,11 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	var executed string
 	switch q.QueryType {
 	case "", "builder", "sql":
-		result, executed, err = d.sqlQuery(ctx, q, dq)
+		if err = d.prepareLogs(ctx, &q); err == nil {
+			result, executed, err = d.sqlQuery(ctx, q, dq)
+		}
+	case "graphql-builder":
+		result, executed, err = d.graphBuilderQuery(ctx, &q, dq)
 	case "graphql":
 		result, executed, err = d.graphqlQuery(ctx, q, dq)
 	case "analytics":
@@ -242,6 +247,28 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 	}
 	path := ""
 	route := strings.Trim(req.Path, "/")
+	if route == "graphql-datasets" {
+		q := Query{Scope: params.Get("scope"), AccountID: account, ZoneID: params.Get("zoneId"), Dataset: params.Get("dataset")}
+		q.AccountID, q.ZoneID, err = d.scope(q)
+		if err != nil {
+			return sendResourceError(sender, 400, err.Error())
+		}
+		if params.Get("refresh") == "true" {
+			d.mu.Lock()
+			for key := range d.cache {
+				if strings.HasPrefix(key, "graphql-") {
+					delete(d.cache, key)
+				}
+			}
+			d.mu.Unlock()
+		}
+		catalog, cause := d.graphCatalog(ctx, q)
+		if cause != nil {
+			return sendResourceError(sender, int(queryError(cause).Status), cause.Error())
+		}
+		body, _ := json.Marshal(map[string]any{"datasets": catalog})
+		return sender.Send(&backend.CallResourceResponse{Status: 200, Headers: map[string][]string{"Content-Type": {"application/json"}}, Body: body})
+	}
 	switch route {
 	case "datasets":
 		if !tagPattern.MatchString(account) {
@@ -278,21 +305,25 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 	if err != nil {
 		return sendResourceError(sender, int(queryError(backend.DownstreamError(err)).Status), err.Error())
 	}
+	d.cacheBody(path, body)
+	return sender.Send(&backend.CallResourceResponse{Status: 200, Headers: map[string][]string{"Content-Type": {"application/json"}}, Body: body})
+}
+
+func (d *Datasource) cacheBody(key string, body []byte) {
 	d.mu.Lock()
-	for key, cached := range d.cache {
+	for cachedKey, cached := range d.cache {
 		if cached.Expires <= time.Now().Unix() {
-			delete(d.cache, key)
+			delete(d.cache, cachedKey)
 		}
 	}
 	if len(d.cache) >= 256 {
-		for key := range d.cache {
-			delete(d.cache, key)
+		for cachedKey := range d.cache {
+			delete(d.cache, cachedKey)
 			break
 		}
 	}
-	d.cache[path] = cacheEntry{Body: body, Expires: time.Now().Add(5 * time.Minute).Unix()}
+	d.cache[key] = cacheEntry{Body: body, Expires: time.Now().Add(5 * time.Minute).Unix()}
 	d.mu.Unlock()
-	return sender.Send(&backend.CallResourceResponse{Status: 200, Headers: map[string][]string{"Content-Type": {"application/json"}}, Body: body})
 }
 
 func sendResourceError(sender backend.CallResourceResponseSender, status int, message string) error {

@@ -1,7 +1,13 @@
 import type { DataQuery, DataSourceJsonData } from "@grafana/data";
 import { z } from "zod";
 
-export type QueryType = "builder" | "sql" | "graphql" | "analytics" | "telemetry";
+export type QueryType =
+  | "builder"
+  | "sql"
+  | "graphql"
+  | "graphql-builder"
+  | "analytics"
+  | "telemetry";
 
 export type ResultFormat = "timeseries" | "table" | "logs" | "traces";
 
@@ -129,3 +135,33 @@ export const defaultTelemetry = JSON.stringify(
   null,
   2,
 );
+
+const graphColumnSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  description: z.string(),
+  numeric: z.boolean(),
+});
+
+export const graphCatalogSchema = z.object({
+  datasets: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      fields: z.array(graphColumnSchema),
+      filters: z.array(graphColumnSchema),
+      orderBy: z.array(z.string()),
+      settings: z
+        .object({
+          enabled: z.boolean(),
+          availableFields: z.array(z.string()),
+          maxDuration: z.number(),
+          maxPageSize: z.number(),
+          notOlderThan: z.number(),
+        })
+        .optional(),
+    }),
+  ),
+});
+
+export type GraphDataset = z.infer<typeof graphCatalogSchema>["datasets"][number];

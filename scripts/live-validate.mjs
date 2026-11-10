@@ -80,38 +80,45 @@ await query("Workers p99 CPU", {
   limit: 1000,
 });
 
-const logs = await query("Workers logs", {
+await query("Workers logs", {
   queryType: "builder",
   dataset: "logs.workersLogs",
   format: "logs",
   limit: 5,
 });
 
-const traceIndex =
-  logs.frames?.[0]?.schema.fields.findIndex((field) => field.name === "traceId") ?? -1;
-
-const traceId = traceIndex >= 0 ? logs.frames[0].data.values[traceIndex].find(Boolean) : undefined;
-
-await query("Trace search", {
+const traces = await query("Trace search", {
   queryType: "builder",
   dataset: "logs.traces",
   format: "traces",
   limit: 5,
 });
 
-if (traceId)
-  await query("Full distributed trace", {
+const traceIndex =
+  traces.frames?.[0]?.schema.fields.findIndex((field) => field.name === "traceId") ?? -1;
+
+const traceId =
+  traceIndex >= 0 ? traces.frames[0].data.values[traceIndex].find(Boolean) : undefined;
+
+if (traceId) {
+  const trace = await query("Full distributed trace", {
     queryType: "builder",
     dataset: "logs.traces",
     format: "traces",
     traceId,
     limit: 10000,
   });
-else {
+
+  if (!trace.frames?.[0]?.data.values[0]?.length || trace.frames.length !== 3) {
+    report.checks[report.checks.length - 1].ok = false;
+    report.checks[report.checks.length - 1].error =
+      "Retained trace did not produce native waterfall and node graph frames";
+  }
+} else {
   report.checks.push({
     name: "Full distributed trace",
     ok: false,
-    error: "No recent trace ID was returned by Workers logs",
+    error: "No recent retained trace was returned by trace search",
   });
   console.log("FAIL Full distributed trace (no recent trace ID)");
 }
@@ -133,6 +140,14 @@ await query("Variable query", {
   queryType: "sql",
   format: "table",
   sql: "SELECT scriptName AS __text, scriptName AS __value FROM events.workersInvocations GROUP BY scriptName LIMIT 1000",
+});
+
+await query("GraphQL builder", {
+  queryType: "graphql-builder",
+  dataset: "workersInvocationsAdaptive",
+  format: "timeseries",
+  columns: ["sum.requests"],
+  groupBy: ["dimensions.scriptName"],
 });
 
 await query("GraphQL", {
