@@ -1,52 +1,34 @@
 import { mkdir, writeFile } from "node:fs/promises";
 
-const base = process.env.GRAFANA_URL ?? "http://localhost:3100";
-const uid = process.env.GRAFANA_DATASOURCE_UID ?? "cloudflare-live";
-const headers = { "Content-Type": "application/json" };
+import { datasourceUID, grafanaRequest } from "./grafana.mjs";
 
-if (process.env.GRAFANA_TOKEN) headers.Authorization = `Bearer ${process.env.GRAFANA_TOKEN}`;
-
-async function request(path, body) {
-  const response = await fetch(base + path, {
-    method: body ? "POST" : "GET",
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  const result = await response.json();
-
-  if (!response.ok && !result.results)
-    throw new Error(`Grafana HTTP ${response.status}: ${JSON.stringify(result)}`);
-
-  return result;
-}
-
-const health = await request(`/api/datasources/uid/${uid}/health`);
+const health = await grafanaRequest(`/api/datasources/uid/${datasourceUID}/health`);
 
 if (health.status !== "OK") throw new Error(health.message);
 
-const catalog = await request(`/api/datasources/uid/${uid}/resources/datasets`);
+const catalog = await grafanaRequest(`/api/datasources/uid/${datasourceUID}/resources/datasets`);
 
-const zones = await request(`/api/datasources/uid/${uid}/resources/zones`);
+const zones = await grafanaRequest(`/api/datasources/uid/${datasourceUID}/resources/zones`);
 
 const report = {
   time: new Date().toISOString(),
-  grafana: await request("/api/health"),
-  plugin: (await request("/api/plugins/cloudflare-cloudflare-datasource/settings")).info?.version,
+  grafana: await grafanaRequest("/api/health"),
+  plugin: (await grafanaRequest("/api/plugins/cloudflare-cloudflare-datasource/settings")).info
+    ?.version,
   catalogSize: catalog.datasets.length,
   checks: [],
   catalog: [],
 };
 
 async function query(name, target, destination = report.checks) {
-  const result = await request("/api/ds/query", {
+  const result = await grafanaRequest("/api/ds/query", {
     from: String(Date.now() - 3600000),
     to: String(Date.now()),
     queries: [
       {
         ...target,
         refId: "A",
-        datasource: { uid, type: "cloudflare-cloudflare-datasource" },
+        datasource: { uid: datasourceUID, type: "cloudflare-cloudflare-datasource" },
         intervalMs: 60000,
         maxDataPoints: 1000,
       },

@@ -1,11 +1,12 @@
 import { transformAsync } from "@babel/core";
+import transformModulesSystemjs from "@babel/plugin-transform-modules-systemjs";
 import { cp, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 
 const source = await readFile("dist/module.js", "utf8");
 
 const result = await transformAsync(source, {
   filename: "module.js",
-  plugins: ["@babel/plugin-transform-modules-systemjs"],
+  plugins: [transformModulesSystemjs],
   sourceMaps: true,
   inputSourceMap: JSON.parse(await readFile("dist/module.js.map", "utf8")),
 });
