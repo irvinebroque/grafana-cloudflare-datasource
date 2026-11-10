@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { z } from "zod";
+import overview from "../../src/dashboards/cloudflare-overview.json" with { type: "json" };
 
 const uid = process.env.GRAFANA_DATASOURCE_UID ?? "cloudflare-live";
 const fieldSchema = z.object({ name: z.string(), type: z.string() });
@@ -376,12 +377,28 @@ test("keeps separate SQL dialects when switching query languages", async ({ page
 });
 
 test("renders the starter dashboard with its SQL query variable", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1800 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  const responses: Array<Promise<void>> = [];
+  page.on("response", (response) => {
+    if (response.url().includes("/api/ds/query"))
+      responses.push(
+        response.json().then((body) => {
+          const result = resultSchema.parse(body);
+
+          for (const query of Object.values(result.results)) {
+            if (query.error) errors.push(query.error);
+          }
+        }),
+      );
+  });
   await page.goto("/d/cloudflare-overview/cloudflare-overview");
-  await expect(page.getByText("Worker requests", { exact: true })).toBeVisible();
+  await expect(page.getByText("Worker requests / s", { exact: true })).toBeVisible();
   await expect(page.getByText("Worker CPU · p99", { exact: true })).toBeVisible();
-  await expect(page.getByText("D1 query latency", { exact: true })).toBeVisible();
+  await expect(page.getByText("Worker request duration · p95", { exact: true })).toBeVisible();
+  await expect(page.getByText("Worker errors · %", { exact: true })).toBeVisible();
+  await expect(page.getByText("D1 query latency · account", { exact: true })).toBeVisible();
   await expect(page.getByText("Worker", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeHidden({
     timeout: 30000,
@@ -393,7 +410,9 @@ test("renders the starter dashboard with its SQL query variable", async ({ page 
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeHidden({
     timeout: 30000,
   });
+  await expect(page.getByRole("grid")).toBeVisible();
   await page.screenshot({ path: ".local/dashboard-validated.png", fullPage: true });
+  await Promise.all(responses);
   expect(errors).toEqual([]);
 });
 
@@ -504,4 +523,193 @@ test("follows a real Audit Logs v2 entry into native resource history", async ({
   await page.getByRole("button", { name: "Run Cloudflare query", exact: true }).last().click();
   const history = resultSchema.parse(await (await response).json());
   expect(history.results.A?.error).toBeUndefined();
+});
+
+test("renders real deployment annotations and skips the All Worker selection", async ({
+  page,
+  request,
+}) => {
+  const end = Date.now();
+
+  const deploymentTarget = overview.annotations.list.find(
+    (annotation) => annotation.target.queryType === "rest",
+  )?.target;
+
+  expect(deploymentTarget).toBeDefined();
+
+  const workersResponse = await request.post("/api/ds/query", {
+    data: {
+      from: String(end - 3600000),
+      to: String(end),
+      queries: [
+        {
+          refId: "A",
+          datasource: { uid, type: "cloudflare-cloudflare-datasource" },
+          queryType: "sql",
+          format: "table",
+          sql: "SELECT scriptName, COUNT(*) AS n FROM events.workersInvocations WHERE httpResponseStatus >= 100 GROUP BY scriptName ORDER BY n DESC LIMIT 5",
+        },
+      ],
+    },
+  });
+
+  const workersResult = resultSchema.parse(await workersResponse.json()).results.A;
+
+  expect(workersResult?.error).toBeUndefined();
+  const workersFrame = workersResult?.frames?.[0];
+
+  const workersColumn =
+    workersFrame?.schema.fields.findIndex((field) => field.name === "scriptName") ?? -1;
+
+  const workers = z.array(z.string()).parse(workersFrame?.data.values[workersColumn]);
+  let deployment: { worker: string; timestamp: number; id: string } | undefined;
+
+  for (const worker of workers) {
+    const response = await request.post("/api/ds/query", {
+      data: {
+        from: String(end - 365 * 86400000),
+        to: String(end),
+        queries: [
+          {
+            ...deploymentTarget,
+            refId: "A",
+            resourceId: worker,
+            datasource: { uid, type: "cloudflare-cloudflare-datasource" },
+          },
+        ],
+      },
+    });
+
+    const result = resultSchema.parse(await response.json()).results.A;
+
+    expect(result?.error).toBeUndefined();
+    const frame = result?.frames?.[0];
+
+    if (!frame?.data.values[0]?.length) continue;
+    const time = frame.schema.fields.findIndex((field) => field.name === "created_on");
+    const id = frame.schema.fields.findIndex((field) => field.name === "id");
+
+    deployment = {
+      worker,
+      timestamp: z.coerce.date().parse(frame.data.values[time]?.[0]).getTime(),
+      id: z.string().parse(frame.data.values[id]?.[0]),
+    };
+    break;
+  }
+
+  expect(
+    deployment,
+    "An existing deployment is required to validate native annotation markers",
+  ).toBeDefined();
+
+  if (!deployment) return;
+  const dashboardUID = `cf-overview-test-${Date.now()}`;
+
+  const dashboard = {
+    ...overview,
+    uid: dashboardUID,
+    title: "Cloudflare overview validation",
+    __inputs: undefined,
+    panels: overview.panels.map((panel) => ({
+      ...panel,
+      datasource: { ...panel.datasource, uid },
+      targets: panel.targets.map((target) => ({
+        ...target,
+        datasource: { ...target.datasource, uid },
+      })),
+    })),
+    annotations: {
+      list: overview.annotations.list.map((annotation) => ({
+        ...annotation,
+        enable: annotation.target.queryType === "rest",
+        datasource: { ...annotation.datasource, uid },
+      })),
+    },
+    templating: {
+      list: overview.templating.list.map((variable) => ({
+        ...variable,
+        refresh: 0,
+        datasource: { ...variable.datasource, uid },
+        current: { text: "All", value: "$__all" },
+        options: [
+          { text: "All", value: "$__all", selected: true },
+          { text: deployment.worker, value: deployment.worker, selected: false },
+        ],
+      })),
+    },
+  };
+
+  const imported = await request.post("/api/dashboards/db", {
+    data: { dashboard, overwrite: true },
+  });
+
+  expect(imported.ok()).toBe(true);
+  const deploymentRequests: string[] = [];
+  const queryErrors: Array<Promise<string[]>> = [];
+
+  page.on("response", (response) => {
+    if (response.url().includes("/api/ds/query"))
+      queryErrors.push(
+        response
+          .json()
+          .then((body) =>
+            Object.values(resultSchema.parse(body).results).flatMap((query) =>
+              query.error ? [query.error] : [],
+            ),
+          ),
+      );
+  });
+
+  const annotationRequest = z.object({
+    queries: z.array(
+      z.object({ operation: z.string().optional(), resourceId: z.string().optional() }),
+    ),
+  });
+
+  page.on("request", (req) => {
+    if (req.url().includes("/api/ds/query") && req.method() === "POST") {
+      const body = annotationRequest.parse(req.postDataJSON());
+
+      for (const query of body.queries) {
+        if (query.operation === "worker-deployments")
+          deploymentRequests.push(query.resourceId ?? "");
+      }
+    }
+  });
+
+  try {
+    await page.goto(`/d/${dashboardUID}/cloudflare-overview-validation`);
+    await expect(page.getByText("Worker requests / s", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeHidden({
+      timeout: 30000,
+    });
+    await expect(page.locator("canvas").first()).toBeVisible();
+    expect(deploymentRequests).toEqual([]);
+
+    const response = page.waitForResponse((res) => {
+      if (!res.url().includes("/api/ds/query") || res.request().method() !== "POST") return false;
+
+      return annotationRequest
+        .parse(res.request().postDataJSON())
+        .queries.some((query) => query.operation === "worker-deployments");
+    });
+
+    await page.goto(
+      `/d/${dashboardUID}/cloudflare-overview-validation?var-worker=${encodeURIComponent(deployment.worker)}&from=${deployment.timestamp - 300000}&to=${deployment.timestamp + 300000}`,
+    );
+    const result = resultSchema.parse(await (await response).json()).results.Anno;
+
+    expect(result?.error).toBeUndefined();
+    expect(result?.frames?.[0]?.data.values[0]?.length).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeHidden({
+      timeout: 30000,
+    });
+    await page.getByRole("button", { name: "Annotation", exact: true }).first().click();
+    await expect(page.getByTestId("annotation-marker")).toContainText(deployment.id);
+    expect(deploymentRequests).toEqual([deployment.worker]);
+    expect((await Promise.all(queryErrors)).flat()).toEqual([]);
+    await page.screenshot({ path: ".local/deployment-annotation-validated.png", fullPage: true });
+  } finally {
+    await request.delete(`/api/dashboards/uid/${dashboardUID}`);
+  }
 });

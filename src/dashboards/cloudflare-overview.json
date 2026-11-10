@@ -13,12 +13,65 @@
   "panels": [
     {
       "id": 1,
-      "title": "Worker requests",
+      "title": "Worker requests / s",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 12,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "format": "timeseries",
+          "limit": 10000,
+          "queryType": "sql",
+          "params": "{\"selectedWorker\":\"${worker:raw}\"}",
+          "sql": "SELECT $__timeGroup(timestamp) AS time, scriptName, COUNT(*) / $__interval_s AS requestsPerSecond FROM events.workersInvocations WHERE scriptName LIKE $selectedWorker GROUP BY time, scriptName ORDER BY time LIMIT 10000"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "description": "Worker invocations per second, grouped by Worker. Counts include Cloudflare adaptive sampling weights."
+    },
+    {
+      "id": 8,
+      "title": "Worker request duration · p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
         "h": 8
       },
       "datasource": {
@@ -37,9 +90,9 @@
           "dataset": "events.workersInvocations",
           "metrics": [
             {
-              "aggregation": "count",
-              "field": "",
-              "alias": "requests"
+              "aggregation": "p95",
+              "field": "requestDurationUs",
+              "alias": "requestDurationUs"
             }
           ],
           "groupBy": ["scriptName"],
@@ -48,6 +101,11 @@
               "field": "scriptName",
               "operator": "LIKE",
               "value": "$worker"
+            },
+            {
+              "field": "requestDurationUs",
+              "operator": ">",
+              "value": "0"
             }
           ],
           "limit": 10000
@@ -55,14 +113,15 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "µs",
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -74,16 +133,17 @@
           "displayMode": "list",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Time from the first request byte received to the last response byte sent. Excludes invocations without a recorded request duration; quantiles use sampling weights."
     },
     {
       "id": 2,
-      "title": "Worker CPU \u00b7 p99",
+      "title": "Worker CPU · p99",
       "type": "timeseries",
       "gridPos": {
-        "x": 12,
+        "x": 16,
         "y": 0,
-        "w": 12,
+        "w": 8,
         "h": 8
       },
       "datasource": {
@@ -120,7 +180,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "\u00b5s",
+          "unit": "µs",
           "color": {
             "mode": "palette-classic"
           },
@@ -143,7 +203,7 @@
     },
     {
       "id": 3,
-      "title": "Worker errors",
+      "title": "Worker errors · %",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -162,44 +222,63 @@
             "type": "cloudflare-cloudflare-datasource",
             "uid": "${DS_CLOUDFLARE}"
           },
-          "queryType": "builder",
           "format": "timeseries",
-          "dataset": "events.workersInvocations",
-          "metrics": [
-            {
-              "aggregation": "count",
-              "field": "",
-              "alias": "errors"
-            }
-          ],
-          "groupBy": [],
-          "filters": [
-            {
-              "field": "scriptName",
-              "operator": "LIKE",
-              "value": "$worker"
-            },
-            {
-              "field": "status",
-              "operator": "!=",
-              "value": "ok"
-            }
-          ],
-          "limit": 10000
+          "limit": 10000,
+          "queryType": "sql",
+          "params": "{\"selectedWorker\":\"${worker:raw}\"}",
+          "sql": "SELECT $__timeGroup(timestamp) AS time, 100.0 * countIf(status IN ('scriptThrewException', 'exceededResources', 'internalError')) / COUNT(*) AS invocationFailurePct FROM events.workersInvocations WHERE scriptName LIKE $selectedWorker GROUP BY time ORDER BY time LIMIT 10000"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "format": "timeseries",
+          "limit": 10000,
+          "queryType": "sql",
+          "params": "{\"selectedWorker\":\"${worker:raw}\"}",
+          "sql": "SELECT $__timeGroup(timestamp) AS time, 100.0 * countIf(httpResponseStatus >= 500) / COUNT(*) AS http5xxPct FROM events.workersInvocations WHERE scriptName LIKE $selectedWorker AND httpResponseStatus >= 100 AND httpResponseStatus < 600 GROUP BY time ORDER BY time LIMIT 10000"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "percent",
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8
-          }
+          },
+          "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "invocationFailurePct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Invocation failures"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "http5xxPct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "HTTP 5xx"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "tooltip": {
@@ -209,11 +288,12 @@
           "displayMode": "list",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Invocation failures: exceptions, resource-limit failures, and internal errors as a percentage of all invocations. HTTP 5xx: server-error responses as a percentage of recorded HTTP responses. No recorded HTTP responses produces a gap."
     },
     {
       "id": 4,
-      "title": "D1 query latency",
+      "title": "D1 query latency · account",
       "type": "timeseries",
       "gridPos": {
         "x": 8,
@@ -268,11 +348,12 @@
           "displayMode": "list",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Account-wide data. The Worker selector does not filter this panel."
     },
     {
       "id": 5,
-      "title": "R2 operations",
+      "title": "R2 operations · account",
       "type": "timeseries",
       "gridPos": {
         "x": 16,
@@ -327,11 +408,12 @@
           "displayMode": "list",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Account-wide data. The Worker selector does not filter this panel."
     },
     {
       "id": 6,
-      "title": "Worker logs \u00b7 open a trace from log details",
+      "title": "Worker logs · open a trace from log details",
       "type": "logs",
       "gridPos": {
         "x": 0,
@@ -380,7 +462,7 @@
     },
     {
       "id": 7,
-      "title": "Recent traces \u00b7 click a trace ID to inspect",
+      "title": "Recent traces · click a trace ID to inspect",
       "type": "table",
       "gridPos": {
         "x": 0,
@@ -402,7 +484,14 @@
           "queryType": "builder",
           "format": "traces",
           "dataset": "logs.traces",
-          "limit": 30
+          "limit": 30,
+          "filters": [
+            {
+              "field": "serviceName",
+              "operator": "LIKE",
+              "value": "$worker"
+            }
+          ]
         }
       ],
       "fieldConfig": {
@@ -418,7 +507,8 @@
         },
         "overrides": []
       },
-      "options": {}
+      "options": {},
+      "description": "Traces containing spans from the selected Worker service. Open a trace to inspect all its retained spans."
     }
   ],
   "templating": {
@@ -445,7 +535,8 @@
         "current": {
           "text": "All",
           "value": "$__all"
-        }
+        },
+        "description": "Filters Worker metrics, logs, traces, and annotations. D1 and R2 panels show account-wide data."
       }
     ]
   },
@@ -464,7 +555,40 @@
           "refId": "Annotations",
           "queryType": "sql",
           "format": "table",
-          "sql": "SELECT timestamp AS time, message AS text FROM logs.workersLogs WHERE level = 'error' ORDER BY timestamp DESC LIMIT 20"
+          "sql": "SELECT timestamp AS time, message AS text FROM logs.workersLogs WHERE level = 'error' AND scriptName LIKE $selectedWorker ORDER BY timestamp DESC LIMIT 20",
+          "params": "{\"selectedWorker\":\"${worker:raw}\"}"
+        }
+      },
+      {
+        "name": "Worker deployments (select a Worker)",
+        "enable": false,
+        "hide": false,
+        "datasource": {
+          "type": "cloudflare-cloudflare-datasource",
+          "uid": "${DS_CLOUDFLARE}"
+        },
+        "iconColor": "#5794F2",
+        "target": {
+          "refId": "Deployments",
+          "queryType": "rest",
+          "format": "table",
+          "operation": "worker-deployments",
+          "resourceId": "$worker",
+          "limit": 1000
+        },
+        "mappings": {
+          "time": {
+            "source": "field",
+            "value": "created_on"
+          },
+          "text": {
+            "source": "field",
+            "value": "id"
+          },
+          "title": {
+            "source": "field",
+            "value": "source"
+          }
         }
       }
     ]

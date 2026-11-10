@@ -48,6 +48,10 @@ All operational requests are allowlisted GET operations against Cloudflare's API
 
 Use Grafana's existing time-series, table, logs, trace, node-graph, variable, annotation, and alert features. The overview and two-panel trace dashboard remain the only included dashboards. Product examples belong in the query editor; a separate dashboard per product is unnecessary.
 
+The eight-panel overview shows Worker requests per second, p95 request duration, p99 CPU, error percentages, D1 latency, R2 operations, logs, and recent traces. **Invocation failures** counts exceptions, resource-limit failures, and internal errors across all invocations. **HTTP 5xx** uses recorded HTTP responses as its denominator. The Worker selector filters Worker panels and annotations; D1 and R2 remain account-wide.
+
+Optional **Worker errors** and **Worker deployments (select a Worker)** annotations use Grafana's native markers. Deployments require **Workers Scripts Read** and an individual Worker selection; **All** skips that annotation query. Both annotations are disabled initially.
+
 See [coverage and validation boundaries](COVERAGE.md), [validation results](VALIDATION.md), and [token permissions](PERMISSIONS.md).
 
 Sources: [GraphQL settings](https://developers.cloudflare.com/analytics/graphql-api/features/discovery/settings/), [Containers metrics](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-container-metrics/), [log datasets](https://developers.cloudflare.com/observability/logs/datasets/), [Cloudflare API schema](https://github.com/cloudflare/api-schemas), and [Audit Logs v2](https://developers.cloudflare.com/api/resources/accounts/subresources/logs/subresources/audit/methods/list/).

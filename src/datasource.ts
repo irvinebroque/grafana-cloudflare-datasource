@@ -171,8 +171,20 @@ export class DataSource
     super(settings);
     this.variables = new CloudflareVariables();
     this.annotations = {
-      prepareQuery: (annotation) =>
-        annotation.target ? { ...annotation.target, format: "table" } : undefined,
+      prepareQuery: (annotation) => {
+        const target = annotation.target;
+
+        if (!target) return undefined;
+
+        if (
+          target.queryType === "rest" &&
+          target.operation === "worker-deployments" &&
+          getTemplateSrv().replace(target.resourceId ?? "") === "%"
+        )
+          return undefined;
+
+        return { ...target, format: "table" };
+      },
       getDefaultQuery: () => ({
         queryType: "sql",
         format: "table",
