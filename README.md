@@ -93,12 +93,14 @@ Set **SQL parameters** to:
 
 - The plugin supplies the account or zone and dashboard time range. Omit those predicates from SQL.
 - `$__timeGroup(timestamp)` groups results using Grafana's query interval.
+- Press **Ctrl+Space** for dataset, column, macro, and dashboard variable suggestions. Press **Shift+Enter** or **Ctrl/Cmd+Enter** to run.
 - Choose **Table** for queries without a time column.
 - See the [Cloudflare SQL reference](https://developers.cloudflare.com/analytics/sql-api/sql-reference/) for supported functions.
 
 ### Explore logs and traces
 
 - Choose **Workers · logs** or **Containers · logs** to search logs and view surrounding context.
+- In builder log details, use the filter buttons to include or exclude a field value. The builder shows the resulting filter.
 - In Worker log details, click **View trace** to open the matching waterfall.
 - Choose **Workers · distributed trace** to search traces, or paste a **Trace ID**.
 
@@ -136,6 +138,7 @@ Open [localhost:3100](http://localhost:3100) and sign in with `admin` / `admin` 
 - A row-limit warning means results may be incomplete; narrow the time range or increase the limit.
 - See [validation and known limitations](docs/VALIDATION.md).
 - See the [0.1.1 bug audit](docs/AUDIT.md) for fixes and dependency findings.
+- See the [comparison with Grafana's cloud datasources](docs/COMPARISON.md) for the design decisions behind the editor and Explore integrations.
 
 ## Development
 

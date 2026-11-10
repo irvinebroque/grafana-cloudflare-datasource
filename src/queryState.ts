@@ -67,9 +67,15 @@ export function defaultMetric(dataset: Dataset | undefined, alias: string): Metr
     aggregation: states?.valid_aggregations[0] ?? "count",
     field: states
       ? (dataset?.columns?.find(
-          (column) => /^(U?Int|Float)/.test(column.data_type) && column.name !== "sampleInterval",
+          (column) => isNumericType(column.data_type) && column.name !== "sampleInterval",
         )?.name ?? "")
       : "",
     alias,
   };
+}
+
+export function isNumericType(type: string): boolean {
+  return /^(?:(?:Nullable|LowCardinality)\(\s*)*(?:U?Int\d+|Float\d+|Decimal(?:\d+)?(?:\(|$))/.test(
+    type,
+  );
 }

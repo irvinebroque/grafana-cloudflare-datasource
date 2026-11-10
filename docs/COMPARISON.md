@@ -1,0 +1,35 @@
+# Comparison with Grafana cloud datasources
+
+Reviewed against their default branches on 10 November 2026:
+
+- [Cloud Monitoring at 96b0000](https://github.com/grafana/grafana-cloudmonitoring-datasource/tree/96b0000f7c9625cceba46285a2d4f38548b6fa5a)
+- [CloudWatch at 6be2cdb](https://github.com/grafana/grafana-cloudwatch-datasource/tree/6be2cdbc59df9877b46d349fe3538d775cdb0864)
+- [Elasticsearch at faa2b68](https://github.com/grafana/grafana-elasticsearch-datasource/tree/faa2b68e03d25e993bf5ba4a9e5b558982475b86)
+
+The useful common pattern is to integrate with Grafana's existing query and Explore interfaces, and derive choices from provider metadata. This follow-up adds those conveniences without adding datasource settings or runtime dependencies.
+
+| Capability                          | Reference implementation                                                                                                                                                                                                                              | Cloudflare result                                                                                                                                                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Code editing and keyboard execution | CloudWatch's [SQL editor](https://github.com/grafana/grafana-cloudwatch-datasource/blob/6be2cdbc59df9877b46d349fe3538d775cdb0864/src/components/QueryEditor/MetricsQueryEditor/SQLCodeEditor.tsx) uses Grafana's code editor and execution shortcuts. | SQL, GraphQL, and JSON use Grafana's editor. Shift+Enter and Ctrl/Cmd+Enter run the current query. SQL suggestions include datasets, columns of referenced datasets, available attributes, macros, and dashboard variables. Legacy Analytics Engine suggestions use its table names. |
+| Useful query history                | CloudWatch and Elasticsearch implement `getQueryDisplayText` in their datasource classes.                                                                                                                                                             | History displays a builder's dataset, metrics, grouping, filters, and trace ID, or the actual raw query.                                                                                                                                                                             |
+| Filter directly from log details    | Elasticsearch's [datasource](https://github.com/grafana/grafana-elasticsearch-datasource/blob/faa2b68e03d25e993bf5ba4a9e5b558982475b86/src/datasource.ts) implements Grafana's toggleable query filters.                                              | Native include/exclude buttons update structured builder filters. Repeating the same action removes the filter; choosing its opposite replaces it. Values remain bound SQL parameters. Buttons are enabled for supported string fields on builder logs.                              |
+| Provider-aware metric choices       | The reference plugins discover provider metrics and fields rather than using a generic text form for every choice.                                                                                                                                    | Dataset discovery already existed. Metric suggestions now exclude nonnumeric types and handle nullable, low-cardinality, and decimal types. Custom field expressions supported by the builder remain available.                                                                      |
+| Units in frame metadata             | Cloud Monitoring's [response conversion](https://github.com/grafana/grafana-cloudmonitoring-datasource/blob/96b0000f7c9625cceba46285a2d4f38548b6fa5a/pkg/cloudmonitoring/cloudmonitoring.go) applies metric units to field configuration.             | Builder metrics and raw numeric columns share unit inference for explicit `Us`, `Ms`, and `Bytes` suffixes. Counts retain count semantics. Raw aliases must retain a unit suffix for inference.                                                                                      |
+| Distinguish upstream failures       | Cloud Monitoring uses the SDK's downstream error handling in its query response path.                                                                                                                                                                 | Cloudflare HTTP status, ray ID, and downstream error source survive query execution. Rate limits, authorization failures, outages, and timeouts no longer become generic HTTP 400 errors. Resource requests preserve upstream status too. Tokens remain redacted.                    |
+
+## Capabilities already present
+
+The plugin already supplies backend query execution and alerting, SQL dashboard variables, annotations, query inspection with executed SQL, account/zone discovery, dataset schemas, examples, automatic time bucketing, nullable frame conversion, truncation warnings, bounded responses, cancellation, and retries.
+
+For Explore, it already supplies log context and directional pagination, full-range volume queries, log-to-trace links, trace search, and native trace waterfalls. These remained in the browser and live validation suite while the editor changed.
+
+## Deliberate limits
+
+- Cloudflare's account/zone model does not need AWS region, IAM role, or Google project configuration. Those provider-specific controls would add friction here.
+- Global ad hoc filters can refer to fields absent from other Cloudflare datasets. Filtering remains attached to an individual query.
+- Raw SQL, GraphQL, and telemetry requests are not rewritten by log-detail filter actions. Their result fields do not advertise that capability.
+- SQL completion uses catalog metadata and a small source-name scan. It is a typing aid, not a second SQL parser or query execution engine. Complex subqueries and aliases can require manual column entry.
+- Builder-to-SQL conversion would need to preserve parameter values and the exact backend dialect. The Query Inspector already exposes executed SQL; this follow-up avoids duplicating the builder in TypeScript.
+- Query and response fixtures cover upstream failures and edge cases; live tests cover available account data. Neither establishes feature parity with every service supported by the three reference plugins.
+
+See [validation](VALIDATION.md) for results and remaining upstream limitations.

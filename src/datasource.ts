@@ -12,6 +12,7 @@ import {
   DataSourceVariableSupport,
   type ScopedVars,
   type DataSourceInstanceSettings,
+  type DataSourceWithToggleableQueryFiltersSupport,
 } from "@grafana/data";
 import { lastValueFrom } from "rxjs";
 import { z } from "zod";
@@ -25,6 +26,8 @@ import {
   type CloudflareQuery,
 } from "./types";
 import { interpolateQuery } from "./interpolation";
+import { queryDisplayText } from "./queryDisplay";
+import { queryHasFilter, toggleQueryFilter } from "./queryFilters";
 
 class CloudflareVariables extends DataSourceVariableSupport<DataSource> {
   override getDefaultQuery(): Partial<CloudflareQuery> {
@@ -40,8 +43,16 @@ export class DataSource
   extends DataSourceWithBackend<CloudflareQuery, CloudflareOptions>
   implements
     DataSourceWithLogsContextSupport<CloudflareQuery>,
-    DataSourceWithSupplementaryQueriesSupport<CloudflareQuery>
+    DataSourceWithSupplementaryQueriesSupport<CloudflareQuery>,
+    DataSourceWithToggleableQueryFiltersSupport<CloudflareQuery>
 {
+  queryHasFilter = queryHasFilter;
+  toggleQueryFilter = toggleQueryFilter;
+
+  override getQueryDisplayText(query: CloudflareQuery): string {
+    return queryDisplayText(query);
+  }
+
   getSupportedSupplementaryQueryTypes() {
     return [SupplementaryQueryType.LogsVolume];
   }

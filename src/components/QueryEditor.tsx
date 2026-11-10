@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { QueryEditorProps, SelectableValue } from "@grafana/data";
-import { Alert, Button, Field, Input, Select, TextArea } from "@grafana/ui";
+import { Alert, Button, Field, Input, Select } from "@grafana/ui";
 import type { DataSource } from "../datasource";
 import {
   defaultAnalyticsSQL,
@@ -16,8 +16,11 @@ import {
   type QueryType,
   type ResultFormat,
 } from "../types";
+import { getTemplateSrv } from "@grafana/runtime";
+import { QueryCodeEditor } from "./QueryCodeEditor";
+import { sqlSuggestions } from "../sqlSuggestions";
 import { presets } from "../presets";
-import { defaultMetric, migrateQuery, queryForMode } from "../queryState";
+import { defaultMetric, isNumericType, migrateQuery, queryForMode } from "../queryState";
 
 type Props = QueryEditorProps<DataSource, CloudflareQuery, CloudflareOptions>;
 
@@ -111,10 +114,11 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
     ? aggregations.filter((item) => supportedAggregations.includes(item.value))
     : aggregations;
 
-  const fields: Array<SelectableValue<string>> = (dataset?.columns ?? []).map((column) => ({
+  const fields = (dataset?.columns ?? []).map((column) => ({
     label: column.name,
     value: column.name,
     description: `${column.data_type} · ${column.description ?? ""}`,
+    numeric: isNumericType(column.data_type),
   }));
 
   for (const attribute of dataset?.attributes ?? []) {
@@ -122,6 +126,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
       label: `attributes['${attribute.name}']`,
       value: `attributes['${attribute.name}']`,
       description: attribute.data_type,
+      numeric: isNumericType(attribute.data_type),
     });
   }
 
@@ -357,7 +362,7 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
                         aria-label={`Metric field ${index + 1}`}
                         width={32}
                         value={metric.field}
-                        options={fields}
+                        options={fields.filter((field) => field.numeric)}
                         allowCustomValue
                         onChange={(value) => changeMetric(index, { field: value.value ?? "" })}
                       />
@@ -581,22 +586,29 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
                 : "Include a timestamp predicate with $__fromTime and $__toTime. Analytics Engine uses its original sampling semantics."
             }
           >
-            <TextArea
-              aria-label="SQL query"
-              rows={8}
+            <QueryCodeEditor
+              key={query.queryType}
+              label="SQL query"
+              language="sql"
+              height={180}
+              onRunQuery={onRunQuery}
+              getSuggestions={() =>
+                sqlSuggestions(
+                  query,
+                  datasets,
+                  getTemplateSrv()
+                    .getVariables()
+                    .map((variable) => variable.name),
+                )
+              }
               value={
                 query.queryType === "analytics"
                   ? (query.analyticsSql ?? query.sql ?? defaultAnalyticsSQL)
                   : (query.sql ?? defaultSQL)
               }
-              onChange={(event) =>
-                update(
-                  query.queryType === "analytics"
-                    ? { analyticsSql: event.currentTarget.value }
-                    : { sql: event.currentTarget.value },
-                )
+              onChange={(value) =>
+                update(query.queryType === "analytics" ? { analyticsSql: value } : { sql: value })
               }
-              onBlur={onRunQuery}
             />
           </Field>
           {query.queryType === "sql" && (
@@ -606,12 +618,13 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
                 'Bind values with $name placeholders. For dashboard variables use {"worker": ${worker:json}}.'
               }
             >
-              <TextArea
-                aria-label="SQL parameters"
-                rows={2}
-                placeholder={'{"status": 500}'}
+              <QueryCodeEditor
+                label="SQL parameters"
+                language="json"
+                height={80}
+                onRunQuery={onRunQuery}
                 value={query.params ?? ""}
-                onChange={(event) => update({ params: event.currentTarget.value })}
+                onChange={(value) => update({ params: value })}
               />
             </Field>
           )}
@@ -627,20 +640,23 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
             label="GraphQL query"
             description="Variables accountTag, zoneTag, from, and to are provided automatically."
           >
-            <TextArea
-              aria-label="GraphQL query"
-              rows={12}
+            <QueryCodeEditor
+              label="GraphQL query"
+              language="graphql"
+              height={260}
+              onRunQuery={onRunQuery}
               value={query.graphql ?? defaultGraphQL}
-              onChange={(event) => update({ graphql: event.currentTarget.value })}
-              onBlur={onRunQuery}
+              onChange={(value) => update({ graphql: value })}
             />
           </Field>
           <Field label="Additional variables (JSON)">
-            <TextArea
-              aria-label="GraphQL variables"
-              rows={2}
+            <QueryCodeEditor
+              label="GraphQL variables"
+              language="json"
+              height={80}
+              onRunQuery={onRunQuery}
               value={query.variables ?? ""}
-              onChange={(event) => update({ variables: event.currentTarget.value })}
+              onChange={(value) => update({ variables: value })}
             />
           </Field>
           <Field
@@ -660,12 +676,13 @@ export function QueryEditor({ query: stored, datasource, onChange, onRunQuery }:
           label="Workers telemetry request (JSON)"
           description="Paste query parameters from Workers Query Builder. Grafana supplies timeframe and an ad-hoc query ID. Use SQL for native trace waterfalls."
         >
-          <TextArea
-            aria-label="Telemetry query"
-            rows={10}
+          <QueryCodeEditor
+            label="Telemetry query"
+            language="json"
+            height={220}
+            onRunQuery={onRunQuery}
             value={query.telemetry ?? defaultTelemetry}
-            onChange={(event) => update({ telemetry: event.currentTarget.value })}
-            onBlur={onRunQuery}
+            onChange={(value) => update({ telemetry: value })}
           />
         </Field>
       )}

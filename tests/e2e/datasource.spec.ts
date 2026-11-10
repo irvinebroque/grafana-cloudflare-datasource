@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 import { z } from "zod";
 
 const uid = process.env.GRAFANA_DATASOURCE_UID ?? "cloudflare-live";
@@ -25,14 +25,19 @@ const resultSchema = z.object({
 
 const requestSchema = z.object({ queries: z.array(z.object({ refId: z.string() })) });
 
-function mainQuery(page: Page) {
-  return page.waitForResponse((response) => {
-    if (!response.url().includes("/api/ds/query") || response.request().method() !== "POST")
-      return false;
-    const parsed = requestSchema.safeParse(response.request().postDataJSON());
+async function mainQuery(page: Page) {
+  const request = await page.waitForRequest((request) => {
+    if (!request.url().includes("/api/ds/query") || request.method() !== "POST") return false;
+    const parsed = requestSchema.safeParse(request.postDataJSON());
 
     return parsed.success && parsed.data.queries.some((query) => query.refId === "A");
   });
+
+  const response = await request.response();
+
+  if (!response) throw new Error("Grafana query did not return a response");
+
+  return response;
 }
 
 test("keeps the configured token masked and tests the provisioned connection", async ({ page }) => {
@@ -43,6 +48,17 @@ test("keeps the configured token masked and tests the provisioned connection", a
   await page.getByRole("button", { name: "Test", exact: true }).click();
   await expect(page.getByText(/Connected to Cloudflare SQL API/)).toBeVisible();
 });
+
+async function editCode(input: Locator, value: string) {
+  await input.click();
+  await input.press("ControlOrMeta+A");
+  await input.press("Backspace");
+  await input.page().keyboard.insertText(value);
+}
+
+function codeEditor(page: Page, label: string) {
+  return page.locator(".monaco-editor").filter({ has: page.getByRole("textbox", { name: label }) });
+}
 
 async function example(page: Page, name: string) {
   await page.getByLabel("Query examples").click();
@@ -198,18 +214,80 @@ test("edits raw SQL and recovers after an upstream validation error", async ({ p
   await page.getByLabel("Query language").click();
   await page.getByText("SQL", { exact: true }).click();
   const sql = page.getByLabel("SQL query");
-  await sql.fill("SELECT missingColumn FROM events.workersInvocations LIMIT 1");
-  const failed = page.waitForResponse((response) => response.url().includes("/api/ds/query"));
+  await editCode(sql, "SELECT missingColumn FROM events.workersInvocations LIMIT 1");
+  const failed = mainQuery(page);
   await page.getByRole("button", { name: "Run Cloudflare query" }).click();
   expect(resultSchema.parse(await (await failed).json()).results.A?.error).toContain(
     "Cloudflare API HTTP 422",
   );
-  await sql.fill(
+  await editCode(
+    sql,
     "SELECT $__timeGroup(timestamp) AS time, COUNT(*) AS requests FROM events.workersInvocations GROUP BY time ORDER BY time LIMIT 1000",
   );
-  const recovered = page.waitForResponse((response) => response.url().includes("/api/ds/query"));
+  const recovered = mainQuery(page);
   await page.getByRole("button", { name: "Run Cloudflare query" }).click();
   expect(resultSchema.parse(await (await recovered).json()).results.A?.error).toBeUndefined();
+});
+
+test("completes SQL from the live catalog and runs with the keyboard", async ({ page }) => {
+  await page.goto("/explore");
+  await page.getByText(/Dataset schema · [1-9]/).waitFor();
+  await page.getByLabel("Query language").click();
+  await page.getByText("SQL", { exact: true }).click();
+  const sql = page.getByLabel("SQL query");
+  await editCode(sql, "SELECT 1 AS value FROM events.workers");
+  await sql.press("Control+Space");
+  await page.getByRole("option").filter({ hasText: "events.workersInvocations" }).first().click();
+  await expect(codeEditor(page, "SQL query")).toContainText("events.workersInvocations");
+  await editCode(sql, "SELECT COUNT(*) AS requests FROM events.workersInvocations");
+  await page.getByLabel("Result format").click();
+  await page.getByText("Table", { exact: true }).click();
+  // Editing again must retain settings changed after Monaco mounted.
+  await editCode(sql, "SELECT COUNT(*) AS requests FROM events.workersInvocations LIMIT 1");
+  const response = mainQuery(page);
+  await sql.press("Shift+Enter");
+  const result = await response;
+  expect(resultSchema.parse(await result.json()).results.A?.error).toBeUndefined();
+
+  const request = z
+    .object({ queries: z.array(z.object({ format: z.string(), sql: z.string() })) })
+    .parse(result.request().postDataJSON());
+
+  expect(request.queries[0]?.format).toBe("table");
+  expect(request.queries[0]?.sql).toContain("LIMIT 1");
+  await page.screenshot({ path: ".local/sql-editor-validated.png", fullPage: true });
+});
+
+test("filters builder logs from native Grafana log details", async ({ page }) => {
+  for (const action of ["for", "out"]) {
+    await page.goto("/explore");
+    await example(page, "Workers · logs");
+    await page.getByRole("button", { name: "Log menu", exact: true }).first().click();
+    await page.getByText("Show log details", { exact: true }).click();
+    const response = mainQuery(page);
+    await page
+      .getByRole("button", { name: `Filter ${action} value in query A`, exact: true })
+      .first()
+      .click();
+    const result = await response;
+    expect(resultSchema.parse(await result.json()).results.A?.error).toBeUndefined();
+
+    const request = z
+      .object({
+        queries: z.array(
+          z.object({
+            filters: z.array(
+              z.object({ field: z.string(), operator: z.string(), value: z.string() }),
+            ),
+          }),
+        ),
+      })
+      .parse(result.request().postDataJSON());
+
+    expect(request.queries[0]?.filters).toEqual([
+      { field: "level", operator: action === "for" ? "=" : "!=", value: expect.any(String) },
+    ]);
+  }
 });
 
 test("rejects null JSON without crashing and recovers in both raw API modes", async ({ page }) => {
@@ -219,14 +297,19 @@ test("rejects null JSON without crashing and recovers in both raw API modes", as
     await page.getByLabel("Query language").click();
     await page.getByText(mode, { exact: true }).click();
     const input = page.getByLabel(mode === "GraphQL" ? "GraphQL variables" : "Telemetry query");
-    const valid = mode === "GraphQL" ? "{}" : await input.inputValue();
-    await input.fill("null");
+
+    const valid =
+      mode === "GraphQL"
+        ? "{}"
+        : '{"view":"events","limit":100,"parameters":{"datasets":["cloudflare-workers"],"filters":[],"calculations":[]}}';
+
+    await editCode(input, "null");
     const failed = mainQuery(page);
     await page.getByRole("button", { name: "Run Cloudflare query" }).click();
     expect(resultSchema.parse(await (await failed).json()).results.A?.error).toContain(
       "JSON object",
     );
-    await input.fill(valid);
+    await editCode(input, valid);
     const recovered = mainQuery(page);
     await page.getByRole("button", { name: "Run Cloudflare query" }).click();
     expect(resultSchema.parse(await (await recovered).json()).results.A?.error).toBeUndefined();
@@ -255,17 +338,17 @@ test("keeps separate SQL dialects when switching query languages", async ({ page
   await page.goto("/explore");
   await page.getByLabel("Query language").click();
   await page.getByText("SQL", { exact: true }).click();
-  await page.getByLabel("SQL query").fill(unified);
+  await editCode(page.getByLabel("SQL query"), unified);
   await page.getByLabel("Query language").click();
   await page.getByText("Analytics Engine SQL", { exact: true }).click();
-  await expect(page.getByLabel("SQL query")).toContainText("your_dataset");
-  await page.getByLabel("SQL query").fill(legacy);
+  await expect(codeEditor(page, "SQL query")).toContainText("your_dataset");
+  await editCode(page.getByLabel("SQL query"), legacy);
   await page.getByLabel("Query language").click();
   await page.getByText("SQL", { exact: true }).click();
-  await expect(page.getByLabel("SQL query")).toHaveValue(unified);
+  await expect(codeEditor(page, "SQL query")).toContainText(unified);
   await page.getByLabel("Query language").click();
   await page.getByText("Analytics Engine SQL", { exact: true }).click();
-  await expect(page.getByLabel("SQL query")).toHaveValue(legacy);
+  await expect(codeEditor(page, "SQL query")).toContainText(legacy);
   const response = mainQuery(page);
   await page.getByRole("button", { name: "Run Cloudflare query" }).click();
   expect(resultSchema.parse(await (await response).json()).results.A?.error).toBeUndefined();
