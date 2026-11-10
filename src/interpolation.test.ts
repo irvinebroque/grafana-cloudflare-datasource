@@ -29,7 +29,7 @@ describe("query boundaries", () => {
     expect(calls).toContainEqual(['{"worker":${worker:json}}', "json"]);
   });
 
-  it("keeps all catalog kinds, state restrictions, and user attributes", () => {
+  it("validates state restrictions and user attributes", () => {
     const catalog = catalogSchema.parse({
       datasets: [
         {

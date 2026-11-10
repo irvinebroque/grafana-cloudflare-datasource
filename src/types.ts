@@ -29,7 +29,6 @@ export interface CloudflareQuery extends DataQuery {
   filters?: QueryFilter[];
   columns?: string[];
   timeField?: string;
-  timeSeries?: boolean;
   sampled?: boolean;
   limit?: number;
   sql?: string;
@@ -57,14 +56,13 @@ export interface CloudflareSecrets {
   apiToken?: string;
 }
 
-export const columnSchema = z.object({
+const columnSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   data_type: z.string(),
-  hidden: z.boolean().optional(),
 });
 
-export const datasetSchema = z.object({
+const datasetSchema = z.object({
   name: z.string(),
   title: z.string(),
   category: z.string(),
@@ -72,16 +70,11 @@ export const datasetSchema = z.object({
   hidden: z.boolean().optional(),
   kind: z
     .object({
-      events: z.object({ sampling: z.string() }).optional(),
-      logs: z.object({ sampling: z.string() }).optional(),
-      states: z
-        .object({ sampling: z.string(), valid_aggregations: z.array(z.string()) })
-        .optional(),
+      states: z.object({ valid_aggregations: z.array(z.string()) }).optional(),
     })
     .optional(),
   columns: z.array(columnSchema).optional(),
   attributes: z.array(columnSchema).optional(),
-  availability: z.array(z.object({ scope: z.string(), zone: z.string().optional() })).optional(),
 });
 
 export const catalogSchema = z.object({ datasets: z.array(datasetSchema) });

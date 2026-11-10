@@ -291,11 +291,6 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 			return sendResourceError(sender, 400, "select a valid account ID")
 		}
 		path = "/zones?per_page=50&account.id=" + account
-	case "workers":
-		if !tagPattern.MatchString(account) {
-			return sendResourceError(sender, 400, "select a valid account ID")
-		}
-		path = "/accounts/" + account + "/workers/scripts"
 	default:
 		return sendResourceError(sender, 404, "unknown datasource resource")
 	}
@@ -372,7 +367,7 @@ func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQ
 		return SQLResult{}, q.GraphQL, fmt.Errorf("Cloudflare GraphQL returned no data object")
 	}
 	rows, err := selectRows(envelope.Data, q.DataPath)
-	return SQLResult{Data: rows, Rows: len(rows)}, q.GraphQL, err
+	return SQLResult{Data: rows}, q.GraphQL, err
 }
 
 func (d *Datasource) analyticsQuery(ctx context.Context, q Query, dq backend.DataQuery, account, zone string) (SQLResult, string, error) {
@@ -429,7 +424,7 @@ func (d *Datasource) telemetryQuery(ctx context.Context, q Query, dq backend.Dat
 			}
 		}
 	}
-	return SQLResult{Data: rows, Rows: len(rows)}, q.Telemetry, err
+	return SQLResult{Data: rows}, q.Telemetry, err
 }
 
 func selectRows(value any, path string) ([]map[string]any, error) {

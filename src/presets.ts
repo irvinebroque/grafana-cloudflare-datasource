@@ -1,6 +1,6 @@
 import type { CloudflareQuery } from "./types";
 
-export interface Preset {
+interface Preset {
   label: string;
   query: Partial<CloudflareQuery>;
 }

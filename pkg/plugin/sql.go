@@ -123,7 +123,7 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 			selectParts = append(selectParts, col)
 		}
 	} else {
-		if format == "timeseries" || q.TimeSeries {
+		if format == "timeseries" {
 			name := q.TimeField
 			if name == "" {
 				name = "timestamp"
@@ -189,7 +189,7 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 		}
 	}
 	var filters []string
-	if format == "traces" && q.TraceID == "" && q.QueryType != "sql" {
+	if format == "traces" && q.TraceID == "" {
 		filters = append(filters, "parentSpanId = ''")
 	}
 	for i, f := range q.Filters {
@@ -242,7 +242,7 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 		} else {
 			sql += " ORDER BY startTime ASC"
 		}
-	} else if format == "timeseries" || q.TimeSeries {
+	} else if format == "timeseries" {
 		if bucketed {
 			sql += " ORDER BY time ASC"
 		} else {

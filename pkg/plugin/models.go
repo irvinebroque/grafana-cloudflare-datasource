@@ -28,7 +28,6 @@ type Query struct {
 	Columns       []string        `json:"columns"`
 	Limit         int             `json:"limit"`
 	TimeField     string          `json:"timeField"`
-	TimeSeries    bool            `json:"timeSeries"`
 	Sampled       *bool           `json:"sampled"`
 	TraceID       string          `json:"traceId"`
 	GraphQL       string          `json:"graphql"`
@@ -51,19 +50,12 @@ type Filter struct {
 	Value    string `json:"value"`
 }
 
-type Column struct {
-	Name        string `json:"name"`
-	DataType    string `json:"data_type"`
-	Description string `json:"description"`
-}
-
 type SQLResult struct {
 	Data []map[string]any `json:"data"`
 	Meta []struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
 	} `json:"meta"`
-	Rows       int             `json:"rows"`
 	Statistics json.RawMessage `json:"statistics"`
 }
 
