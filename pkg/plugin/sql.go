@@ -37,15 +37,11 @@ func intervalSeconds(q backend.DataQuery) int64 {
 	return seconds
 }
 
-func expandMacros(sql string, dq backend.DataQuery, account, zone string) string {
-	return expandSQLMacros(sql, dq, account, zone, false)
-}
-
-func expandSQLMacros(sql string, dq backend.DataQuery, account, zone string, legacy bool) string {
+func expandMacros(sql string, dq backend.DataQuery, q Query) string {
 	seconds := intervalSeconds(dq)
 	sql = timeGroup.ReplaceAllStringFunc(sql, func(match string) string {
 		field := timeGroup.FindStringSubmatch(match)[1]
-		if !legacy {
+		if q.QueryType != "analytics" {
 			field = "`" + field + "`"
 		}
 		return fmt.Sprintf("toStartOfInterval(%s, INTERVAL '%d' SECOND)", field, seconds)
@@ -57,7 +53,7 @@ func expandSQLMacros(sql string, dq backend.DataQuery, account, zone string, leg
 		"$__from_s", strconv.FormatInt(dq.TimeRange.From.Unix(), 10),
 		"$__toTime", "'"+dq.TimeRange.To.UTC().Format("2006-01-02 15:04:05")+"'",
 		"$__to_s", strconv.FormatInt(dq.TimeRange.To.Unix(), 10),
-		"$__accountId", "'"+account+"'", "$__zoneId", "'"+zone+"'",
+		"$__accountId", "'"+q.AccountID+"'", "$__zoneId", "'"+q.ZoneID+"'",
 	).Replace(sql)
 }
 
@@ -88,31 +84,32 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 	if format == "" {
 		format = "timeseries"
 	}
-	if format == "logs" {
-		columns := q.Columns
-		if len(columns) == 0 {
-			columns = []string{"timestamp", "message", "level", "scriptName", "traceId", "spanId", "id", "requestId"}
-			if q.Dataset == "logs.containerLogs" {
-				columns = []string{"timestamp", "message", "level", "containerId", "placementId", "id"}
-			}
+	timeColumn := ""
+	if format == "logs" || format == "timeseries" {
+		name := q.TimeField
+		if name == "" {
+			name = "timestamp"
 		}
-		for _, name := range columns {
-			if err := addColumn(name); err != nil {
-				return "", nil, err
-			}
-			col, err := fieldSQL(name)
-			if err != nil {
-				return "", nil, err
-			}
-			selectParts = append(selectParts, col)
+		var err error
+		timeColumn, err = fieldSQL(name)
+		if err != nil {
+			return "", nil, err
 		}
-	} else if format == "traces" {
+	}
+	columns := q.Columns
+	if format == "logs" && len(columns) == 0 {
+		columns = []string{"timestamp", "message", "level", "scriptName", "traceId", "spanId", "id", "requestId"}
+		if q.Dataset == "logs.containerLogs" {
+			columns = []string{"timestamp", "message", "level", "containerId", "placementId", "id"}
+		}
+	}
+	if format == "traces" {
 		selectParts = []string{"traceId", "spanId", "parentSpanId", "serviceName", "spanName", "startTime", "durationMs", "spanStatus", "attributes"}
 		if q.TraceID == "" {
 			selectParts = []string{"traceId", "serviceName", "spanName", "startTime", "durationMs", "spanStatus"}
 		}
-	} else if len(q.Columns) > 0 && len(q.Metrics) == 0 {
-		for _, name := range q.Columns {
+	} else if format == "logs" || (len(columns) > 0 && len(q.Metrics) == 0) {
+		for _, name := range columns {
 			if err := addColumn(name); err != nil {
 				return "", nil, err
 			}
@@ -124,15 +121,7 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 		}
 	} else {
 		if format == "timeseries" {
-			name := q.TimeField
-			if name == "" {
-				name = "timestamp"
-			}
-			col, err := fieldSQL(name)
-			if err != nil {
-				return "", nil, err
-			}
-			bucket := fmt.Sprintf("toStartOfInterval(%s, INTERVAL '%d' SECOND)", col, intervalSeconds(dq))
+			bucket := fmt.Sprintf("toStartOfInterval(%s, INTERVAL '%d' SECOND)", timeColumn, intervalSeconds(dq))
 			selectParts = append(selectParts, bucket+" AS time")
 			groupParts = append(groupParts, "time")
 			selected["time"] = true
@@ -222,49 +211,26 @@ func buildSQL(q Query, dq backend.DataQuery, maxRows int) (string, map[string]an
 	if len(groupParts) > 0 {
 		sql += " GROUP BY " + strings.Join(groupParts, ", ")
 	}
-	if format == "logs" {
-		timeField := q.TimeField
-		if timeField == "" {
-			timeField = "timestamp"
+	orderColumn, direction := timeColumn, "ASC"
+	switch format {
+	case "logs":
+		if q.LogOrder != "asc" {
+			direction = "DESC"
 		}
-		column, err := fieldSQL(timeField)
-		if err != nil {
-			return "", nil, err
-		}
-		if q.LogOrder == "asc" {
-			sql += " ORDER BY " + column + " ASC"
-		} else {
-			sql += " ORDER BY " + column + " DESC"
-		}
-	} else if format == "traces" {
+	case "traces":
+		orderColumn = "startTime"
 		if q.TraceID == "" {
-			sql += " ORDER BY startTime DESC"
-		} else {
-			sql += " ORDER BY startTime ASC"
+			direction = "DESC"
 		}
-	} else if format == "timeseries" {
+	case "timeseries":
 		if bucketed {
-			sql += " ORDER BY time ASC"
-		} else {
-			name := q.TimeField
-			if name == "" {
-				name = "timestamp"
-			}
-			column, err := fieldSQL(name)
-			if err != nil {
-				return "", nil, err
-			}
-			sql += " ORDER BY " + column + " ASC"
+			orderColumn = "time"
 		}
 	}
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 1000
+	if orderColumn != "" {
+		sql += " ORDER BY " + orderColumn + " " + direction
 	}
-	if limit > maxRows {
-		limit = maxRows
-	}
-	sql += fmt.Sprintf(" LIMIT %d", limit)
+	sql += fmt.Sprintf(" LIMIT %d", q.rowLimit(maxRows))
 	return sql, params, nil
 }
 

@@ -150,13 +150,7 @@ func resultFrames(result SQLResult, q Query, refID, uid, executed string, maxRow
 		frame.Meta.Custom = map[string]any{"statistics": result.Statistics, "rows": len(rows), "accountId": q.AccountID, "zoneId": q.ZoneID, "dataset": q.Dataset}
 		limit := maxRows
 		if q.QueryType == "builder" || q.QueryType == "" {
-			limit = q.Limit
-			if limit <= 0 {
-				limit = 1000
-			}
-			if limit > maxRows {
-				limit = maxRows
-			}
+			limit = q.rowLimit(maxRows)
 		}
 		if truncated || len(rows) >= limit {
 			frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{Severity: data.NoticeSeverityWarning, Text: "Row limit reached. Narrow the query or raise the limit; results may be incomplete."})

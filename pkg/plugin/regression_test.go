@@ -7,12 +7,52 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
+
+func TestQueryBatchesLimitConcurrencyAndSkipCanceledRequests(t *testing.T) {
+	var active, calls atomic.Int32
+	d := testDatasource(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if current := active.Add(1); current > 4 {
+			t.Errorf("batch exceeded four concurrent requests: %d", current)
+		}
+		defer active.Add(-1)
+		time.Sleep(5 * time.Millisecond)
+		fmt.Fprint(w, `{"data":[{"value":1}]}`)
+	})
+	request := &backend.QueryDataRequest{}
+	for i := 0; i < 12; i++ {
+		query := dataQuery(Query{QueryType: "sql", Format: "table", SQL: "SELECT 1 AS value"})
+		query.RefID = fmt.Sprintf("Q%d", i)
+		request.Queries = append(request.Queries, query)
+	}
+	response, err := d.QueryData(context.Background(), request)
+	if err != nil || len(response.Responses) != 12 || calls.Load() != 12 {
+		t.Fatalf("batch lost responses: %+v, %v, %d requests", response, err, calls.Load())
+	}
+	for ref, result := range response.Responses {
+		if result.Error != nil {
+			t.Errorf("%s failed: %v", ref, result.Error)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	response, err = d.QueryData(ctx, request)
+	if err != nil || len(response.Responses) != 12 || calls.Load() != 12 {
+		t.Fatalf("canceled batch dispatched requests: %+v, %v, %d requests", response, err, calls.Load())
+	}
+	for ref, result := range response.Responses {
+		if result.Error == nil || result.Status != backend.StatusTimeout {
+			t.Errorf("%s did not return a cancellation: %+v", ref, result)
+		}
+	}
+}
 
 func TestRejectNonObjectAndTrailingParameters(t *testing.T) {
 	for _, source := range []string{"null", "[]", "1", `{} {"extra":true}`, `{} garbage`} {
@@ -313,7 +353,7 @@ func TestGraphQLDocumentsAreParsedBeforeExecution(t *testing.T) {
 
 func TestLegacyTimeGroupDoesNotUseUnsupportedIdentifierQuotes(t *testing.T) {
 	q := dataQuery(Query{})
-	sql := expandSQLMacros("SELECT $__timeGroup(timestamp) AS time", q, accountID, zoneID, true)
+	sql := expandMacros("SELECT $__timeGroup(timestamp) AS time", q, Query{QueryType: "analytics", AccountID: accountID, ZoneID: zoneID})
 	if strings.Contains(sql, "`") || !strings.Contains(sql, "toStartOfInterval(timestamp,") {
 		t.Errorf("legacy macro uses unsupported quoting: %s", sql)
 	}

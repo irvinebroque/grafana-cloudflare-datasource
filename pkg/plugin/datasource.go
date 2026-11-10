@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/httpclient"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/experimental/concurrent"
 )
 
 type Datasource struct {
@@ -94,34 +95,15 @@ func (d *Datasource) scope(q Query) (string, string, error) {
 }
 
 func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
-	response := backend.NewQueryDataResponse()
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 4)
-	for _, query := range req.Queries {
-		wg.Add(1)
-		go func(dq backend.DataQuery) {
-			defer wg.Done()
-			select {
-			case semaphore <- struct{}{}:
-				defer func() { <-semaphore }()
-			case <-ctx.Done():
-				mu.Lock()
-				response.Responses[dq.RefID] = backend.ErrDataResponse(backend.StatusTimeout, ctx.Err().Error())
-				mu.Unlock()
-				return
-			}
-			res := d.query(ctx, req.PluginContext, dq)
-			mu.Lock()
-			response.Responses[dq.RefID] = res
-			mu.Unlock()
-		}(query)
-	}
-	wg.Wait()
-	return response, nil
+	return concurrent.QueryData(ctx, req, func(ctx context.Context, query concurrent.Query) backend.DataResponse {
+		return d.query(ctx, query.PluginContext, query.DataQuery)
+	}, 4)
 }
 
 func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq backend.DataQuery) backend.DataResponse {
+	if err := ctx.Err(); err != nil {
+		return backend.ErrDataResponse(backend.StatusTimeout, err.Error())
+	}
 	var q Query
 	if err := json.Unmarshal(dq.JSON, &q); err != nil {
 		return backend.ErrDataResponse(backend.StatusBadRequest, "invalid query JSON")
@@ -148,13 +130,13 @@ func (d *Datasource) query(ctx context.Context, pc backend.PluginContext, dq bac
 	var executed string
 	switch q.QueryType {
 	case "", "builder", "sql":
-		result, executed, err = d.sqlQuery(ctx, q, dq, account, zone)
+		result, executed, err = d.sqlQuery(ctx, q, dq)
 	case "graphql":
-		result, executed, err = d.graphqlQuery(ctx, q, dq, account, zone)
+		result, executed, err = d.graphqlQuery(ctx, q, dq)
 	case "analytics":
-		result, executed, err = d.analyticsQuery(ctx, q, dq, account, zone)
+		result, executed, err = d.analyticsQuery(ctx, q, dq)
 	case "telemetry":
-		result, executed, err = d.telemetryQuery(ctx, q, dq, account)
+		result, executed, err = d.telemetryQuery(ctx, q, dq)
 	default:
 		err = fmt.Errorf("unsupported query type %q", q.QueryType)
 	}
@@ -208,12 +190,12 @@ func decodeSQL(body []byte) (SQLResult, error) {
 	return result, nil
 }
 
-func (d *Datasource) sqlQuery(ctx context.Context, q Query, dq backend.DataQuery, account, zone string) (SQLResult, string, error) {
+func (d *Datasource) sqlQuery(ctx context.Context, q Query, dq backend.DataQuery) (SQLResult, string, error) {
 	var sql string
 	var params map[string]any
 	var err error
 	if q.QueryType == "sql" {
-		sql = expandMacros(q.SQL, dq, account, zone)
+		sql = expandMacros(q.SQL, dq, q)
 		params, err = decodeParams(q.Params)
 	} else {
 		sql, params, err = buildSQL(q, dq, d.settings.MaxRows)
@@ -225,9 +207,9 @@ func (d *Datasource) sqlQuery(ctx context.Context, q Query, dq backend.DataQuery
 	if strings.TrimSpace(sql) == "" {
 		return SQLResult{}, sql, fmt.Errorf("enter a SELECT query")
 	}
-	scope := map[string]string{"accountTag": account}
+	scope := map[string]string{"accountTag": q.AccountID}
 	if q.Scope == "zone" {
-		scope = map[string]string{"zoneTag": zone}
+		scope = map[string]string{"zoneTag": q.ZoneID}
 	}
 	body := map[string]any{"query": sql, "params": params, "scope": scope, "time_range": map[string]string{"start": dq.TimeRange.From.UTC().Format(time.RFC3339Nano), "end": dq.TimeRange.To.UTC().Format(time.RFC3339Nano)}}
 	response, err := d.client.request(ctx, http.MethodPost, "/analytics/sql", body)
@@ -331,7 +313,7 @@ func sendResourceError(sender backend.CallResourceResponseSender, status int, me
 	return sender.Send(&backend.CallResourceResponse{Status: status, Body: body})
 }
 
-func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQuery, account, zone string) (SQLResult, string, error) {
+func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQuery) (SQLResult, string, error) {
 	if err := validateGraphQL(q.GraphQL, q.OperationName); err != nil {
 		return SQLResult{}, q.GraphQL, err
 	}
@@ -339,8 +321,8 @@ func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQ
 	if err != nil {
 		return SQLResult{}, q.GraphQL, err
 	}
-	variables["accountTag"] = account
-	variables["zoneTag"] = zone
+	variables["accountTag"] = q.AccountID
+	variables["zoneTag"] = q.ZoneID
 	variables["from"] = dq.TimeRange.From.UTC().Format(time.RFC3339)
 	variables["to"] = dq.TimeRange.To.UTC().Format(time.RFC3339)
 	payload := map[string]any{"query": q.GraphQL, "variables": variables}
@@ -370,19 +352,19 @@ func (d *Datasource) graphqlQuery(ctx context.Context, q Query, dq backend.DataQ
 	return SQLResult{Data: rows}, q.GraphQL, err
 }
 
-func (d *Datasource) analyticsQuery(ctx context.Context, q Query, dq backend.DataQuery, account, zone string) (SQLResult, string, error) {
-	if account == "" {
+func (d *Datasource) analyticsQuery(ctx context.Context, q Query, dq backend.DataQuery) (SQLResult, string, error) {
+	if q.AccountID == "" {
 		return SQLResult{}, "", fmt.Errorf("Analytics Engine requires an account ID")
 	}
 	source := q.AnalyticsSQL
 	if source == "" {
 		source = q.SQL
 	}
-	sql := expandSQLMacros(source, dq, account, zone, true)
+	sql := expandMacros(source, dq, q)
 	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "SELECT ") && !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "SELECT\n") {
 		return SQLResult{}, sql, fmt.Errorf("Analytics Engine requires a SELECT query")
 	}
-	body, err := d.client.request(ctx, http.MethodPost, "/accounts/"+account+"/analytics_engine/sql", sql)
+	body, err := d.client.request(ctx, http.MethodPost, "/accounts/"+q.AccountID+"/analytics_engine/sql", sql)
 	if err != nil {
 		return SQLResult{}, sql, err
 	}
@@ -390,8 +372,8 @@ func (d *Datasource) analyticsQuery(ctx context.Context, q Query, dq backend.Dat
 	return result, sql, err
 }
 
-func (d *Datasource) telemetryQuery(ctx context.Context, q Query, dq backend.DataQuery, account string) (SQLResult, string, error) {
-	if account == "" {
+func (d *Datasource) telemetryQuery(ctx context.Context, q Query, dq backend.DataQuery) (SQLResult, string, error) {
+	if q.AccountID == "" {
 		return SQLResult{}, "", fmt.Errorf("Workers telemetry requires an account ID")
 	}
 	body, err := decodeParams(q.Telemetry)
@@ -402,7 +384,7 @@ func (d *Datasource) telemetryQuery(ctx context.Context, q Query, dq backend.Dat
 	if _, ok := body["queryId"]; !ok {
 		body["queryId"] = "grafana-" + dq.RefID
 	}
-	response, err := d.client.request(ctx, http.MethodPost, "/accounts/"+account+"/workers/observability/telemetry/query", body)
+	response, err := d.client.request(ctx, http.MethodPost, "/accounts/"+q.AccountID+"/workers/observability/telemetry/query", body)
 	if err != nil {
 		return SQLResult{}, q.Telemetry, err
 	}

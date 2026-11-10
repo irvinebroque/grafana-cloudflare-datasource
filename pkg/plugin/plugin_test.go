@@ -235,7 +235,7 @@ func TestNestedGraphQLAndTelemetryPaths(t *testing.T) {
 }
 func TestLegacyMacrosUseCompatibleDateTime(t *testing.T) {
 	q := dataQuery(Query{})
-	sql := expandMacros("timestamp >= toDateTime($__fromTime) AND timestamp <= toDateTime($__toTime)", q, accountID, zoneID)
+	sql := expandMacros("timestamp >= toDateTime($__fromTime) AND timestamp <= toDateTime($__toTime)", q, Query{QueryType: "analytics", AccountID: accountID, ZoneID: zoneID})
 	if !strings.Contains(sql, "toDateTime('2026-11-10 09:00:00')") || strings.Contains(sql, "Z") {
 		t.Fatal(sql)
 	}

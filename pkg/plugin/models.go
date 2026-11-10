@@ -38,6 +38,14 @@ type Query struct {
 	Hide          bool            `json:"hide"`
 }
 
+func (q Query) rowLimit(maxRows int) int {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 1000
+	}
+	return min(limit, maxRows)
+}
+
 type Metric struct {
 	Aggregation string `json:"aggregation"`
 	Field       string `json:"field"`
