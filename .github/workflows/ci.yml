@@ -1,0 +1,33 @@
+name: Validate and build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vp check --deny-warnings
+      - run: pnpm exec vp test run
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: pnpm exec vp run build
+        env:
+          BUILD_ALL: "1"
+      - run: node scripts/package.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-datasource
+          path: artifacts/*.zip

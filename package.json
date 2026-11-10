@@ -1,0 +1,36 @@
+{
+  "name": "cloudflare-grafana-datasource",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build && node scripts/finalize-frontend.mjs && node scripts/build-backend.mjs",
+    "check": "vp check",
+    "test": "vp test run && go test ./...",
+    "e2e": "playwright test",
+    "dev": "vp build --watch"
+  },
+  "dependencies": {
+    "@grafana/data": "13.3.0",
+    "@grafana/runtime": "13.3.0",
+    "@grafana/ui": "13.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "rxjs": "^7.8.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.1.0",
+    "@babel/plugin-transform-modules-systemjs": "^8.1.0",
+    "@oxlint/plugins": "1.93.0",
+    "@playwright/test": "^1.65.0",
+    "@types/babel__core": "^7.20.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "oxlint": "1.93.0",
+    "typescript": "^7.0.2",
+    "vite-plus": "1.5.1"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

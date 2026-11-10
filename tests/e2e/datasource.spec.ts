@@ -1,0 +1,246 @@
+import { test, expect, type Page } from "@playwright/test";
+import { z } from "zod";
+
+const uid = process.env.GRAFANA_DATASOURCE_UID ?? "cloudflare-live";
+const fieldSchema = z.object({ name: z.string(), type: z.string() });
+
+const resultSchema = z.object({
+  results: z.record(
+    z.string(),
+    z.object({
+      error: z.string().optional(),
+      frames: z
+        .array(
+          z.object({
+            schema: z.object({ fields: z.array(fieldSchema) }),
+            data: z.object({
+              values: z.array(z.array(z.union([z.string(), z.number(), z.boolean(), z.null()]))),
+            }),
+          }),
+        )
+        .optional(),
+    }),
+  ),
+});
+
+const requestSchema = z.object({ queries: z.array(z.object({ refId: z.string() })) });
+
+function mainQuery(page: Page) {
+  return page.waitForResponse((response) => {
+    if (!response.url().includes("/api/ds/query") || response.request().method() !== "POST")
+      return false;
+    const parsed = requestSchema.safeParse(response.request().postDataJSON());
+
+    return parsed.success && parsed.data.queries.some((query) => query.refId === "A");
+  });
+}
+
+test("keeps the configured token masked and tests the provisioned connection", async ({ page }) => {
+  await page.goto(`/connections/datasources/edit/${uid}`);
+  await expect(page.getByLabel("Default account ID")).toBeVisible();
+  await expect(page.getByLabel("API token", { exact: true })).toHaveValue("configured");
+  await expect(page.getByLabel("API token", { exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Test", exact: true }).click();
+  await expect(page.getByText(/Connected to Cloudflare SQL API/)).toBeVisible();
+});
+
+async function example(page: Page, name: string) {
+  await page.getByLabel("Query examples").click();
+  await page.getByText(name, { exact: true }).click();
+
+  const response = mainQuery(page);
+
+  await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+  const result = resultSchema.parse(await (await response).json());
+  expect(result.results.A?.error).toBeUndefined();
+
+  return result;
+}
+
+test("loads the plugin, discovers the catalog, and renders grouped real metrics", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/explore");
+  await expect(page.getByLabel("Query language")).toBeVisible();
+  await page.getByText(/Dataset schema · [1-9]/).waitFor();
+  const result = await example(page, "Workers · requests");
+  expect(result.results.A?.frames?.length).toBeGreaterThan(0);
+  await expect(page.getByText("Graph", { exact: true }).last()).toBeVisible();
+  await page.screenshot({ path: ".local/metrics-validated.png", fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test("shows real logs and exposes trace correlation", async ({ page }) => {
+  await page.goto("/explore");
+  const result = await example(page, "Workers · logs");
+  const fields = result.results.A?.frames?.[0]?.schema.fields.map((field) => field.name);
+  expect(fields).toContain("traceId");
+  expect(fields?.slice(0, 2)).toEqual(["timestamp", "message"]);
+  await expect(page.getByText("Show log level", { exact: true })).toBeVisible();
+  await page.screenshot({ path: ".local/logs-validated.png", fullPage: true });
+  await page.getByRole("button", { name: "Log menu", exact: true }).first().click();
+  await page.getByText("Show log details", { exact: true }).click();
+  await page.getByRole("link", { name: "View trace", exact: true }).first().click();
+  await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
+});
+
+test("fetches invocation log context and a separate full-range volume query", async ({ page }) => {
+  await page.goto("/explore");
+
+  const volume = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/ds/query")) return false;
+    const parsed = requestSchema.safeParse(response.request().postDataJSON());
+
+    return parsed.success && parsed.data.queries.some((query) => query.refId === "log-volume-A");
+  });
+
+  await example(page, "Workers · logs");
+  const volumeResult = resultSchema.parse(await (await volume).json());
+  expect(volumeResult.results["log-volume-A"]?.error).toBeUndefined();
+  expect(volumeResult.results["log-volume-A"]?.frames?.length).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Log menu", exact: true }).first().click();
+
+  const context = page.waitForResponse((response) => {
+    if (!response.url().includes("/api/ds/query")) return false;
+    const parsed = requestSchema.safeParse(response.request().postDataJSON());
+
+    return parsed.success && parsed.data.queries.some((query) => query.refId === "context");
+  });
+
+  await page.getByText("Show context", { exact: true }).click();
+  const contextResult = resultSchema.parse(await (await context).json());
+  expect(contextResult.results.context?.error).toBeUndefined();
+  await expect(page.getByText("Context time window", { exact: true })).toBeVisible();
+  await page.screenshot({ path: ".local/context-validated.png", fullPage: true });
+});
+
+test("searches traces and renders an entire distributed trace", async ({ page, request }) => {
+  const response = await request.post("/api/ds/query", {
+    data: {
+      from: String(Date.now() - 3600000),
+      to: String(Date.now()),
+      queries: [
+        {
+          refId: "A",
+          datasource: { uid, type: "cloudflare-cloudflare-datasource" },
+          queryType: "sql",
+          format: "table",
+          sql: "SELECT traceId FROM logs.traces WHERE parentSpanId = '' ORDER BY startTime DESC LIMIT 1",
+        },
+      ],
+    },
+  });
+
+  const result = resultSchema.parse(await response.json());
+  const trace = result.results.A?.frames?.[0]?.data.values[0]?.[0];
+  expect(trace).toBeTruthy();
+
+  const pane = {
+    test: {
+      datasource: uid,
+      queries: [
+        {
+          refId: "A",
+          datasource: { uid, type: "cloudflare-cloudflare-datasource" },
+          queryType: "builder",
+          format: "traces",
+          dataset: "logs.traces",
+          traceId: trace,
+          limit: 10000,
+        },
+      ],
+      range: { from: "now-1h", to: "now" },
+    },
+  };
+
+  await page.goto(`/explore?schemaVersion=1&panes=${encodeURIComponent(JSON.stringify(pane))}`);
+  await expect(page.getByLabel("Trace ID")).toHaveValue(String(trace));
+  await expect(page.getByText("Service & Operation", { exact: false }).first()).toBeVisible();
+  await page.screenshot({ path: ".local/trace-validated.png", fullPage: true });
+});
+
+test("edits raw SQL and recovers after an upstream validation error", async ({ page }) => {
+  await page.goto("/explore");
+  await page.getByLabel("Query language").click();
+  await page.getByText("SQL", { exact: true }).click();
+  const sql = page.getByLabel("SQL query");
+  await sql.fill("SELECT missingColumn FROM events.workersInvocations LIMIT 1");
+  const failed = page.waitForResponse((response) => response.url().includes("/api/ds/query"));
+  await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+  expect(resultSchema.parse(await (await failed).json()).results.A?.error).toContain(
+    "Cloudflare API HTTP 422",
+  );
+  await sql.fill(
+    "SELECT $__timeGroup(timestamp) AS time, COUNT(*) AS requests FROM events.workersInvocations GROUP BY time ORDER BY time LIMIT 1000",
+  );
+  const recovered = page.waitForResponse((response) => response.url().includes("/api/ds/query"));
+  await page.getByRole("button", { name: "Run Cloudflare query" }).click();
+  expect(resultSchema.parse(await (await recovered).json()).results.A?.error).toBeUndefined();
+});
+
+test("renders the starter dashboard with its SQL query variable", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/d/cloudflare-overview/cloudflare-overview");
+  await expect(page.getByText("Worker requests", { exact: true })).toBeVisible();
+  await expect(page.getByText("Worker CPU · p99", { exact: true })).toBeVisible();
+  await expect(page.getByText("D1 query latency", { exact: true })).toBeVisible();
+  await expect(page.getByText("Worker", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeHidden({
+    timeout: 30000,
+  });
+  await expect(page.locator("canvas").first()).toBeVisible();
+  await page
+    .getByText("Recent traces · click a trace ID to inspect", { exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeHidden({
+    timeout: 30000,
+  });
+  await page.screenshot({ path: ".local/dashboard-validated.png", fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test("supports server-side Grafana alert evaluation", async ({ request }) => {
+  const model = {
+    refId: "A",
+    queryType: "builder",
+    format: "timeseries",
+    dataset: "events.workersInvocations",
+    metrics: [{ aggregation: "count", alias: "requests" }],
+    groupBy: ["scriptName"],
+    intervalMs: 60000,
+    maxDataPoints: 1000,
+  };
+
+  const response = await request.post("/api/v1/eval", {
+    data: {
+      from: new Date(Date.now() - 3600000).toISOString(),
+      to: new Date().toISOString(),
+      condition: "B",
+      data: [
+        { refId: "A", datasourceUid: uid, relativeTimeRange: { from: 3600, to: 0 }, model },
+        {
+          refId: "B",
+          datasourceUid: "__expr__",
+          relativeTimeRange: { from: 3600, to: 0 },
+          model: {
+            refId: "B",
+            type: "reduce",
+            expression: "A",
+            reducer: "last",
+            conditions: [],
+            datasource: { type: "__expr__", uid: "__expr__" },
+          },
+        },
+      ],
+    },
+  });
+
+  expect(response.ok()).toBe(true);
+  const result = resultSchema.parse(await response.json());
+  expect(result.results.B?.error).toBeUndefined();
+  expect(result.results.B?.frames?.length).toBeGreaterThan(0);
+  expect(result.results.B?.frames?.[0]?.data.values[0]?.length).toBe(1);
+});

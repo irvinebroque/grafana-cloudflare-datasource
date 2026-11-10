@@ -1,0 +1,14 @@
+services:
+  grafana:
+    image: grafana/grafana:13.3.0
+    ports:
+      - "127.0.0.1:3100:3000"
+    environment:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: cloudflare-cloudflare-datasource
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?Set a Cloudflare API token}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:?Set a Cloudflare account ID}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+    volumes:
+      - ./dist:/var/lib/grafana/plugins/cloudflare-cloudflare-datasource:ro
+      - ./provisioning:/etc/grafana/provisioning:ro

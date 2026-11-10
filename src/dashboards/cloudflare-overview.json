@@ -1,0 +1,481 @@
+{
+  "uid": "cloudflare-overview",
+  "title": "Cloudflare overview",
+  "schemaVersion": 41,
+  "version": 1,
+  "tags": ["cloudflare", "workers"],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Worker requests",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "timeseries",
+          "dataset": "events.workersInvocations",
+          "metrics": [
+            {
+              "aggregation": "count",
+              "field": "",
+              "alias": "requests"
+            }
+          ],
+          "groupBy": ["scriptName"],
+          "filters": [
+            {
+              "field": "scriptName",
+              "operator": "LIKE",
+              "value": "$worker"
+            }
+          ],
+          "limit": 10000
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Worker CPU \u00b7 p99",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "timeseries",
+          "dataset": "events.workersInvocations",
+          "metrics": [
+            {
+              "aggregation": "p99",
+              "field": "cpuTimeUs",
+              "alias": "cpuTimeUs"
+            }
+          ],
+          "groupBy": ["scriptName"],
+          "filters": [
+            {
+              "field": "scriptName",
+              "operator": "LIKE",
+              "value": "$worker"
+            }
+          ],
+          "limit": 10000
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "\u00b5s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Worker errors",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "timeseries",
+          "dataset": "events.workersInvocations",
+          "metrics": [
+            {
+              "aggregation": "count",
+              "field": "",
+              "alias": "errors"
+            }
+          ],
+          "groupBy": [],
+          "filters": [
+            {
+              "field": "scriptName",
+              "operator": "LIKE",
+              "value": "$worker"
+            },
+            {
+              "field": "status",
+              "operator": "!=",
+              "value": "ok"
+            }
+          ],
+          "limit": 10000
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "D1 query latency",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 8,
+        "y": 8,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "timeseries",
+          "dataset": "events.d1Queries",
+          "metrics": [
+            {
+              "aggregation": "avg",
+              "field": "queryDurationMs",
+              "alias": "queryDurationMs"
+            }
+          ],
+          "groupBy": [],
+          "filters": [],
+          "limit": 10000
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "R2 operations",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 16,
+        "y": 8,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "timeseries",
+          "dataset": "events.r2CombinedOperations",
+          "metrics": [
+            {
+              "aggregation": "count",
+              "field": "",
+              "alias": "requests"
+            }
+          ],
+          "groupBy": [],
+          "filters": [],
+          "limit": 10000
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Worker logs \u00b7 open a trace from log details",
+      "type": "logs",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "logs",
+          "dataset": "logs.workersLogs",
+          "filters": [
+            {
+              "field": "scriptName",
+              "operator": "LIKE",
+              "value": "$worker"
+            }
+          ],
+          "limit": 100
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 7,
+      "title": "Recent traces \u00b7 click a trace ID to inspect",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudflare-cloudflare-datasource",
+        "uid": "${DS_CLOUDFLARE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudflare-cloudflare-datasource",
+            "uid": "${DS_CLOUDFLARE}"
+          },
+          "queryType": "builder",
+          "format": "traces",
+          "dataset": "logs.traces",
+          "limit": 30
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "worker",
+        "label": "Worker",
+        "type": "query",
+        "datasource": {
+          "type": "cloudflare-cloudflare-datasource",
+          "uid": "${DS_CLOUDFLARE}"
+        },
+        "query": {
+          "refId": "VariableQuery",
+          "queryType": "sql",
+          "format": "table",
+          "sql": "SELECT scriptName AS __text, scriptName AS __value FROM events.workersInvocations GROUP BY scriptName LIMIT 1000"
+        },
+        "definition": "Workers in the current dashboard range",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": "%",
+        "multi": false,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Worker errors",
+        "enable": false,
+        "hide": false,
+        "datasource": {
+          "type": "cloudflare-cloudflare-datasource",
+          "uid": "${DS_CLOUDFLARE}"
+        },
+        "iconColor": "red",
+        "target": {
+          "refId": "Annotations",
+          "queryType": "sql",
+          "format": "table",
+          "sql": "SELECT timestamp AS time, message AS text FROM logs.workersLogs WHERE level = 'error' ORDER BY timestamp DESC LIMIT 20"
+        }
+      }
+    ]
+  },
+  "__inputs": [
+    {
+      "name": "DS_CLOUDFLARE",
+      "label": "Cloudflare",
+      "type": "datasource",
+      "pluginId": "cloudflare-cloudflare-datasource",
+      "pluginName": "Cloudflare"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: Cloudflare
+    uid: cloudflare-live
+    type: cloudflare-cloudflare-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      accountId: $CLOUDFLARE_ACCOUNT_ID
+      zoneId: $CLOUDFLARE_ZONE_ID
+      timeoutSeconds: 60
+      maxRows: 10000
+    secureJsonData:
+      apiToken: $CLOUDFLARE_API_TOKEN

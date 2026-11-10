@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.cloudflare/
+.local/
+playwright-report/
+test-results/
+coverage/
+.DS_Store
+artifacts/

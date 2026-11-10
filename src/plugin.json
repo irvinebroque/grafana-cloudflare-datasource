@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "datasource",
+  "id": "cloudflare-cloudflare-datasource",
+  "name": "Cloudflare",
+  "backend": true,
+  "executable": "gpx_cloudflare",
+  "metrics": true,
+  "logs": true,
+  "tracing": true,
+  "alerting": true,
+  "annotations": true,
+  "mixed": true,
+  "queryOptions": {
+    "minInterval": true,
+    "maxDataPoints": true
+  },
+  "info": {
+    "description": "Cloudflare metrics, logs, traces, and analytics across the Cloudflare platform",
+    "author": {
+      "name": "Cloudflare datasource contributors"
+    },
+    "keywords": ["cloudflare", "workers", "logs", "traces", "analytics", "sql"],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [
+      {
+        "name": "Cloudflare SQL API",
+        "url": "https://developers.cloudflare.com/analytics/sql-api/"
+      }
+    ],
+    "version": "0.1.0",
+    "updated": "2026-11-10"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=13.3.0",
+    "plugins": []
+  },
+  "includes": [
+    {
+      "name": "Cloudflare overview",
+      "path": "dashboards/cloudflare-overview.json",
+      "type": "dashboard"
+    }
+  ]
+}
