@@ -12,9 +12,9 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
   return (
     <div style={{ maxWidth: 800 }}>
       <Alert title="Cloudflare connection" severity="info">
-        Use a Cloudflare API token with Account Analytics Read. Workers observability and other APIs
-        may require additional read permissions. Your token is encrypted by Grafana and used only by
-        the server.
+        Use a scoped Cloudflare API token with Account Analytics Read. Some datasets and query
+        languages require additional permissions. Grafana encrypts your token and sends requests
+        through the server.
       </Alert>
       <Field
         label="API token"
@@ -80,11 +80,11 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
         />
       </Field>
       <a
-        href="https://developers.cloudflare.com/analytics/sql-api/get-started/"
+        href="https://github.com/irvinebroque/grafana-cloudflare-datasource/blob/main/docs/PERMISSIONS.md"
         target="_blank"
         rel="noreferrer"
       >
-        Token permissions and SQL API setup
+        Token permissions and troubleshooting
       </a>
     </div>
   );

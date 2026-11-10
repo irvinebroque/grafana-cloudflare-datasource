@@ -22,22 +22,18 @@ flowchart LR
 
 ### API token permissions
 
-Create a custom token scoped to the accounts and zones you want to query. Start with **Account → Account Analytics → Read**, then add permissions for the features you use:
+[Create an API token](https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%5D&accountId=%2A&zoneId=all&name=Grafana%20Cloudflare) with **Account → Account Analytics → Read** preselected. Restrict the token to the accounts and zones you want to query before creating it.
 
-| Feature                                             | Token permission                                     | When to add it                                                                                                                                                  |
-| --------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL catalog, **Save & test**, and account analytics | **Account → Account Analytics → Read**               | Required for SQL dataset discovery and the connection test. Also used by GraphQL account analytics and the original Analytics Engine SQL API.                   |
-| Account selector                                    | **Account → Account Settings → Read**                | Optional account metadata access for **Browse accounts**. You can enter an account ID directly instead.                                                         |
-| Zone selector                                       | **Zone → Zone → Read**                               | Required for **Browse zones**. You can enter a zone ID directly instead. This permission doesn't grant access to analytics.                                     |
-| **Workers telemetry** query language                | **Workers Observability Write** (account permission) | Add only if you use this query language. Cloudflare's telemetry query endpoint currently documents **Workers Observability Write**, even for retrieving events. |
+Add these permissions only if you want to browse resources:
 
-For a token that supports analytics and both resource selectors, use the first three rows. Add the telemetry permission only when needed. **Workers Observability Read** isn't listed as an accepted permission for that telemetry endpoint. The Workers logs, Containers logs, and trace examples use the **SQL API**, so using those examples doesn't by itself require the telemetry permission.
+| Feature         | Additional permission             |
+| --------------- | --------------------------------- |
+| Browse accounts | Account → Account Settings → Read |
+| Browse zones    | Zone → Zone → Read                |
 
-SQL authorization also depends on the selected dataset and fields. Add their required product permissions; **Account Analytics Read** doesn't guarantee access to every product's data. For zone-scoped SQL queries, Cloudflare accepts **Zone → Analytics → Read** for the selected zones or **Account Analytics Read** for their owning account. Keep **Account Analytics Read** for this plugin's account-scoped catalog and connection test.
+You can enter account and zone IDs directly without these browsing permissions.
 
-**Save & test** checks the SQL catalog, not every API or dataset. After saving, run a query for each feature you intend to use. Extra permissions don't enable a product, change its plan requirements, or restore data outside retention.
-
-Sources: [SQL API authorization](https://developers.cloudflare.com/analytics/sql-api/get-started/), [GraphQL authentication](https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth/), [Analytics Engine authentication](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/#authentication), [token permission definitions](https://developers.cloudflare.com/fundamentals/api/reference/permissions/), [zone listing](https://developers.cloudflare.com/api/resources/zones/methods/list/), and [Workers telemetry query permissions](https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/).
+Some datasets require additional product permissions. **Save & test** checks SQL catalog access; run an example query to verify access to your data. See the [permission reference](docs/PERMISSIONS.md) for details.
 
 ## Getting started
 
