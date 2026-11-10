@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { access, mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
@@ -10,6 +10,8 @@ const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 let token = process.env.CLOUDFLARE_API_TOKEN;
 
 if (!token && process.argv.includes("--cf-auth")) {
+  execFileSync("cf", ["auth", "whoami"], { stdio: "ignore" });
+
   const config =
     process.env.CLOUDFLARE_AUTH_CONFIG ??
     join(
